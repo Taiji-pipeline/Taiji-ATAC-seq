@@ -1,0 +1,22 @@
+resolver: nightly-2017-08-08
+
+packages:
+- '.'
+- '../SciFlow'
+- '../bio-pipelines'
+
+# - location:
+#    git: https://github.com/Taiji-pipeline/bio-pipelines.git
+#    commit: 6bb7ef67da59450359cc706b1b1b38c7c6cd068a
+
+- location:
+    git: https://github.com/Taiji-pipeline/bio-experiments.git
+    commit: 2363c020fc865cc008d2952027c97c432bd94af8
+
+extra-deps:
+- bioinformatics-toolkit-0.3.2
+- HsHTSLib-1.3.2.1
+- cereal-vector-0.2.0.1
+- rainbow-0.28.0.4
+- lens-simple-0.1.0.9
+- drmaa-0.2.0
