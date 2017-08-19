@@ -13,11 +13,17 @@ build-type:          Simple
 extra-source-files:  README.md
 cabal-version:       >=1.10
 
+Flag exe
+  Description: Build executable
+  Default:     False
+
 library
   ghc-options:         -Wall
   hs-source-dirs:      src
 
   exposed-modules:     Taiji.Pipeline.ATACSeq
+                       Taiji.Pipeline.ATACSeq.Core
+                       Taiji.Pipeline.ATACSeq.Core.Functions
                        Taiji.Pipeline.ATACSeq.Config
 
   build-depends:       base >= 4.7 && < 5
@@ -32,6 +38,10 @@ library
   default-language:    Haskell2010
 
 executable taiji-atac-seq
+  if flag(exe)
+    buildable: True
+  else
+    buildable: False
   hs-source-dirs:      app
   main-is:             Main.hs
 
