@@ -24,17 +24,24 @@ library
   exposed-modules:     Taiji.Pipeline.ATACSeq
                        Taiji.Pipeline.ATACSeq.Core
                        Taiji.Pipeline.ATACSeq.Core.Functions
+                       Taiji.Pipeline.ATACSeq.Motif
+                       Taiji.Pipeline.ATACSeq.Motif.Functions
                        Taiji.Pipeline.ATACSeq.Config
 
   build-depends:       base >= 4.7 && < 5
                      , bio-pipelines
                      , bio-experiments
+                     , bioinformatics-toolkit
                      , containers
+                     , conduit-combinators
+                     , data-default
                      , lens
                      , mtl
                      , SciFlow >=0.6.0
                      , text
+                     , temporary
                      , singletons
+                     , split
   default-language:    Haskell2010
 
 executable taiji-atac-seq

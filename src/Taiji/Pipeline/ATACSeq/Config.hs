@@ -8,3 +8,5 @@ class ATACSeqConfig config where
     _atacseq_picard :: config -> Maybe FilePath
     _atacseq_bwa_index :: config -> Maybe FilePath
     _atacseq_genome_fasta :: config -> Maybe FilePath
+    _atacseq_genome_index :: config -> Maybe FilePath
+    _atacseq_motif_file :: config -> Maybe FilePath

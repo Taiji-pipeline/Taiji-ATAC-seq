@@ -46,7 +46,7 @@ instance ToJSON ATACSeqOpts
 initialization :: () -> WorkflowConfig ATACSeqOpts ()
 initialization _ = return ()
 
-mainWith defaultMainOpts { programHeader = "Taiji-ATAC-Seq" } $ namespace "ATAC" $ do
+mainWith defaultMainOpts { programHeader = "Taiji-ATAC-Seq" } $ do
     nodeS "Initialization" 'initialization $ submitToRemote .= Just False
     ["Initialization"] ~> "Make_Index"
     builder
