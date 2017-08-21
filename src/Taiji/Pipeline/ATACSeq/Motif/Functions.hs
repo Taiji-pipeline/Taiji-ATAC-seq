@@ -2,19 +2,20 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Taiji.Pipeline.ATACSeq.Motif.Functions
     ( atacMergePeaks
-    , atacFindMotifSite
-    , atacOutputMotifSite
+    , atacFindMotifSiteAll
+    , atacGetMotifSite
     ) where
 
-import           Bio.Data.Bed                  (BED, BED3, getMotifPValue,
-                                                getMotifScore, intersectBed,
-                                                mergeBed, motifScan, readBed,
-                                                readBed', writeBed)
+import           Bio.Data.Bed                  (BED, BED3 (..), BEDLike (..),
+                                                getMotifPValue, getMotifScore,
+                                                intersectBed, mergeBed,
+                                                motifScan, readBed, readBed',
+                                                writeBed, _npPeak)
 import           Bio.Data.Experiment
 import           Bio.Motif
+import           Bio.Pipeline.Instances        ()
 import           Bio.Pipeline.NGS
 import           Bio.Pipeline.Utils
-import           Bio.Pipeline.Instances ()
 import           Bio.Seq.IO
 import           Conduit
 import           Control.Lens
@@ -39,10 +40,10 @@ atacMergePeaks input = do
         mergeBed (concat peaks) $$ writeBed openChromatin
         return $ location .~ openChromatin $ emptyFile
 
-atacFindMotifSite :: ATACSeqConfig config
-                  => ContextData (File '[] 'Bed) [Motif]
-                  -> WorkflowConfig config (File '[] 'Bed)
-atacFindMotifSite (ContextData openChromatin motifs) = do
+atacFindMotifSiteAll :: ATACSeqConfig config
+                     => ContextData (File '[] 'Bed) [Motif]
+                     -> WorkflowConfig config (File '[] 'Bed)
+atacFindMotifSiteAll (ContextData openChromatin motifs) = do
     dir <- asks _atacseq_output_dir >>= getPath
     genome <- fromJust <$> asks _atacseq_genome_index
     liftIO $ withGenome genome $ \g -> do
@@ -54,15 +55,18 @@ atacFindMotifSite (ContextData openChromatin motifs) = do
   where
     p = 1e-5
 
-atacOutputMotifSite :: ATACSeqConfig config
-                    => ([File '[] 'Bed], [ATACSeq (File '[] 'NarrowPeak)])
-                    -> WorkflowConfig config [ATACSeq (File '[] 'Bed)]
-atacOutputMotifSite (tfbs, experiment) = do
+atacGetMotifSite :: ATACSeqConfig config
+                 => Int -- ^ region around summit
+                 -> ([File '[] 'Bed], [ATACSeq (File '[] 'NarrowPeak)])
+                 -> WorkflowConfig config [ATACSeq (File '[] 'Bed)]
+atacGetMotifSite window (tfbs, experiment) = do
     dir <- asks _atacseq_output_dir >>= getPath
     mapM (nameWith dir "" fun) experiment
   where
     fun output fl = liftIO $ do
-        peaks <- readBed' $ fl^.location :: IO [BED3]
+        peaks <- readBed (fl^.location) =$= mapC getSummit $$ sinkList
         (mapM_ (readBed . (^.location)) tfbs :: Source IO BED) =$=
             intersectBed peaks $$ writeBed output
         return $ location .~ output $ emptyFile
+    getSummit pk = let c = chromStart pk + (fromJust . _npPeak) pk
+                   in BED3 (chrom pk) (c - window) (c + window)

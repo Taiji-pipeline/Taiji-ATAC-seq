@@ -82,7 +82,7 @@ atacCallPeak :: (ATACSeqConfig config, SingI tags)
 atacCallPeak input = do
     dir <- asks _atacseq_output_dir >>= getPath
     let fn output fl = callPeaks output fl Nothing $ do
-            callSummits .= True
+            callSummits .= False
             mode .= NoModel (-100) 200
     liftIO $ nameWith dir "narrowPeak" fn input
 

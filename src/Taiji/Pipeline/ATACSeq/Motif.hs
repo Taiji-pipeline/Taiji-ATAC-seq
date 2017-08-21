@@ -21,7 +21,7 @@ builder = do
         motifs <- liftIO $ readMEME motifFile
         return $ ContextData region $ chunksOf 100 motifs
         |] $ submitToRemote .= Just False
-    nodeSharedPS 1 "Find_TFBS" 'atacFindMotifSite $ return ()
-    nodeS "Output_TFBS" 'atacOutputMotifSite $ return ()
-    path ["Call_Peak", "Merge_Peaks", "Find_TFBS_prep", "Find_TFBS"]
-    ["Find_TFBS", "Call_Peak"] ~> "Output_TFBS"
+    nodeSharedPS 1 "Find_TFBS_Union" 'atacFindMotifSiteAll $ return ()
+    nodeS "Get_TFBS" [| atacGetMotifSite 50 |] $ return ()
+    path ["Call_Peak", "Merge_Peaks", "Find_TFBS_prep", "Find_TFBS_Union"]
+    ["Find_TFBS_Union", "Call_Peak"] ~> "Get_TFBS"
