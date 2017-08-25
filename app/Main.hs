@@ -48,5 +48,5 @@ initialization _ = return ()
 
 mainWith defaultMainOpts { programHeader = "Taiji-ATAC-Seq" } $ do
     nodeS "Initialization" 'initialization $ submitToRemote .= Just False
-    ["Initialization"] ~> "Make_Index"
+    ["Initialization"] ~> "Read_Input"
     builder

@@ -11,6 +11,7 @@ module Taiji.Pipeline.ATACSeq.Core.Functions
     , alignQC
     ) where
 
+import           Bio.Data.Bed                  (chrom)
 import           Bio.Data.Experiment
 import           Bio.Pipeline.CallPeaks
 import           Bio.Pipeline.Download
@@ -32,11 +33,14 @@ import           Taiji.Pipeline.ATACSeq.Config
 
 type ATACSeqWithSomeFile = ATACSeq [Either SomeFile (SomeFile, SomeFile)]
 
-atacMkIndex :: ATACSeqConfig config => () -> WorkflowConfig config FilePath
-atacMkIndex _ = do
-    genome <- asks (fromJust . _atacseq_genome_fasta)
-    dir <- asks (fromJust . _atacseq_bwa_index)
-    liftIO $ bwaMkIndex genome dir
+atacMkIndex :: ATACSeqConfig config => [a] -> WorkflowConfig config [a]
+atacMkIndex input
+    | null input = return input
+    | otherwise = do
+        genome <- asks (fromJust . _atacseq_genome_fasta)
+        dir <- asks (fromJust . _atacseq_bwa_index)
+        liftIO $ bwaMkIndex genome dir
+        return input
 
 atacDownloadData :: ATACSeqConfig config
                  => [ATACSeqWithSomeFile]
@@ -51,9 +55,9 @@ atacDownloadData dat = do
         else return input
     download _ x = return x
 
-getFastq :: (FilePath, [ATACSeq [Either SomeFile (SomeFile, SomeFile)]])
-         -> ContextData FilePath [ MaybePairExp ATACSeq '[] '[Pairend] 'Fastq ]
-getFastq (idx, inputs) = ContextData idx $ flip concatMap inputs $ \input ->
+getFastq :: [ATACSeq [Either SomeFile (SomeFile, SomeFile)]]
+         -> [MaybePairExp ATACSeq '[] '[Pairend] 'Fastq]
+getFastq inputs = flip concatMap inputs $ \input ->
     fromMaybe (error "A mix of single and pairend fastq was found") $
         splitExpByFileEither $ input & replicates.mapped.files %~ f
   where
@@ -74,7 +78,7 @@ atacBamToBed input = do
         Right x -> nameWith dir "bed.gz" (\output fl ->
             coerce $ fun output fl) x
   where
-    fun output fl = bam2Bed_ output (const True) fl
+    fun output fl = bam2Bed_ output (\x -> not $ chrom x `elem` ["chrM", "M"]) fl
 
 atacCallPeak :: (ATACSeqConfig config, SingI tags)
              => ATACSeq (File tags 'Bed)

@@ -20,21 +20,21 @@ import           Taiji.Pipeline.ATACSeq.Core.Functions
 
 builder :: Builder ()
 builder = do
-    nodeS "Make_Index" 'atacMkIndex $ return ()
     nodeS "Read_Input" [| \_ -> do
         input <- asks _atacseq_input
         liftIO $ readATACSeq input "ATAC-seq"
         |] $ submitToRemote .= Just False
     nodeS "Download_Data" 'atacDownloadData $ submitToRemote .= Just False
     node' "Get_Fastq" 'getFastq $ submitToRemote .= Just False
-    nodeSharedPS 1 "Align" [| \(ContextData idx input) -> do
+    nodeS "Make_Index" 'atacMkIndex $ return ()
+    nodePS 1 "Align" [| \input -> do
         dir <- asks _atacseq_output_dir >>= getPath
+        idx <- asks (fromJust . _atacseq_bwa_index)
         liftIO $ bitraverse
             (bwaAlign1 (dir, "bam") idx (return ()))
             (bwaAlign2 (dir, "bam") idx (return ()))
             input
         |] $ return ()
-
     nodePS 1 "Filter_Bam" [| \input -> do
         dir <- asks _atacseq_output_dir >>= getPath
         liftIO $ bitraverse
@@ -62,10 +62,9 @@ builder = do
         |] $ return ()
     nodePS 1 "Call_Peak" 'atacCallPeak $ return ()
 
-    path ["Make_Index", "Read_Input", "Download_Data"]
-    ["Make_Index", "Download_Data"] ~> "Get_Fastq"
-    path ["Get_Fastq", "Align", "Filter_Bam", "Remove_Duplicates"
-        , "Bam_To_Bed", "Merge_Bed_Prep", "Merge_Bed", "Call_Peak"]
+    path ["Read_Input", "Download_Data", "Get_Fastq", "Make_Index", "Align"
+        , "Filter_Bam", "Remove_Duplicates", "Bam_To_Bed", "Merge_Bed_Prep"
+        , "Merge_Bed", "Call_Peak"]
 
     nodeP 1 "Align_QC" 'alignQC $ return ()
     ["Align"] ~> "Align_QC"
