@@ -1,4 +1,4 @@
-resolver: nightly-2017-08-08
+resolver: nightly-2017-08-25
 
 flags:
   Taiji-ATAC-seq:
@@ -7,15 +7,14 @@ flags:
 packages:
 - '.'
 - '../SciFlow'
-- '../bio-pipelines'
 
-# - location:
-#    git: https://github.com/Taiji-pipeline/bio-pipelines.git
-#    commit: 6bb7ef67da59450359cc706b1b1b38c7c6cd068a
+- location:
+    git: https://github.com/Taiji-pipeline/bio-pipelines.git
+    commit: 2eda18bc862a27767465126f6a79f7520ae2cf88
 
 - location:
     git: https://github.com/Taiji-pipeline/bio-experiments.git
-    commit: 821fa7d109fb535a7eea389a49c45e51b3b37242
+    commit: 1cd9f244edaacbd1c49b64df127c3943adfcf5d6
 
 extra-deps:
 - bioinformatics-toolkit-0.3.2

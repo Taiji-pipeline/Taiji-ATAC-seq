@@ -25,7 +25,8 @@ builder = do
         liftIO $ readATACSeq input "ATAC-seq"
         |] $ submitToRemote .= Just False
     nodeS "Download_Data" 'atacDownloadData $ submitToRemote .= Just False
-    node' "Get_Fastq" 'getFastq $ submitToRemote .= Just False
+    node' "Get_Fastq" 'atacGetFastq $ submitToRemote .= Just False
+    node' "Get_Bam" [| \(x,y) -> atacGetBam x ++ y |] $ submitToRemote .= Just False
     nodeS "Make_Index" 'atacMkIndex $ return ()
     nodePS 1 "Align" [| \input -> do
         dir <- asks _atacseq_output_dir >>= getPath
@@ -62,9 +63,10 @@ builder = do
         |] $ return ()
     nodePS 1 "Call_Peak" 'atacCallPeak $ return ()
 
-    path ["Read_Input", "Download_Data", "Get_Fastq", "Make_Index", "Align"
-        , "Filter_Bam", "Remove_Duplicates", "Bam_To_Bed", "Merge_Bed_Prep"
-        , "Merge_Bed", "Call_Peak"]
+    path ["Read_Input", "Download_Data", "Get_Fastq", "Make_Index", "Align"]
+    ["Download_Data", "Align"] ~> "Get_Bam"
+    path ["Get_Bam", "Filter_Bam", "Remove_Duplicates", "Bam_To_Bed"
+        , "Merge_Bed_Prep", "Merge_Bed", "Call_Peak"]
 
     nodeP 1 "Align_QC" 'alignQC $ return ()
     ["Align"] ~> "Align_QC"

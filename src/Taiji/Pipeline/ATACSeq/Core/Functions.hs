@@ -5,7 +5,8 @@
 module Taiji.Pipeline.ATACSeq.Core.Functions
     ( atacMkIndex
     , atacDownloadData
-    , getFastq
+    , atacGetFastq
+    , atacGetBam
     , atacBamToBed
     , atacCallPeak
     , alignQC
@@ -24,6 +25,7 @@ import           Control.Monad.IO.Class        (liftIO)
 import           Control.Monad.Reader          (asks)
 import           Data.Bifunctor                (bimap)
 import           Data.Coerce                   (coerce)
+import           Data.Either                   (lefts)
 import           Data.Maybe                    (fromJust, fromMaybe)
 import           Data.Singletons               (SingI)
 import qualified Data.Text                     as T
@@ -32,6 +34,13 @@ import           Scientific.Workflow
 import           Taiji.Pipeline.ATACSeq.Config
 
 type ATACSeqWithSomeFile = ATACSeq [Either SomeFile (SomeFile, SomeFile)]
+
+type ATACSeqMaybePair tag1 tag2 filetype =
+    Either (ATACSeq (File tag1 filetype))
+           (ATACSeq (File tag2 filetype, File tag2 filetype))
+
+type ATACSeqEitherTag tag1 tag2 filetype = Either (ATACSeq (File tag1 filetype))
+                                                  (ATACSeq (File tag2 filetype))
 
 atacMkIndex :: ATACSeqConfig config => [a] -> WorkflowConfig config [a]
 atacMkIndex input
@@ -55,17 +64,27 @@ atacDownloadData dat = do
         else return input
     download _ x = return x
 
-getFastq :: [ATACSeq [Either SomeFile (SomeFile, SomeFile)]]
-         -> [MaybePairExp ATACSeq '[] '[Pairend] 'Fastq]
-getFastq inputs = flip concatMap inputs $ \input ->
+atacGetFastq :: [ATACSeq [Either SomeFile (SomeFile, SomeFile)]]
+         -> [ATACSeqMaybePair '[] '[Pairend] 'Fastq]
+atacGetFastq inputs = flip concatMap inputs $ \input ->
     fromMaybe (error "A mix of single and pairend fastq was found") $
         splitExpByFileEither $ input & replicates.mapped.files %~ f
   where
-    f :: [Either SomeFile (SomeFile, SomeFile)] -> [MaybePair '[] '[Pairend] 'Fastq]
     f fls = map (bimap fromSomeFile (bimap fromSomeFile fromSomeFile)) $
-        filter (either (`someFileIs` Fastq) g) fls
+        filter (either (\x -> getFileType x == Fastq) g) fls
       where
-        g (x,y) = x `someFileIs` Fastq && y `someFileIs` Fastq
+        g (x,y) = getFileType x == Fastq && getFileType y == Fastq
+
+atacGetBam :: [ATACSeq [Either SomeFile (SomeFile, SomeFile)]]
+           -> [ATACSeqEitherTag '[] '[Pairend] 'Bam]
+atacGetBam inputs = flip concatMap inputs $ \input ->
+    fromMaybe (error "A mix of single and pairend fastq was found") $
+        splitExpByFileEither $ input & replicates.mapped.files %~ f
+  where
+    f fls = flip map (filter (\x -> getFileType x == Bam) $ lefts fls) $ \fl ->
+        if fl `hasTag` Pairend
+            then Left $ fromSomeFile fl
+            else Right $ fromSomeFile fl
 
 atacBamToBed :: ATACSeqConfig config
              => Either (ATACSeq (File tags1 'Bam)) (ATACSeq (File tags2 'Bam))
