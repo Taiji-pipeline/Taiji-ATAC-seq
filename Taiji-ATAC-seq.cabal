@@ -35,6 +35,7 @@ library
                      , containers
                      , conduit-combinators
                      , data-default
+                     , filepath
                      , lens
                      , mtl
                      , SciFlow >=0.6.0
@@ -42,6 +43,7 @@ library
                      , temporary
                      , singletons
                      , split
+                     , shelly
   default-language:    Haskell2010
 
 executable taiji-atac-seq

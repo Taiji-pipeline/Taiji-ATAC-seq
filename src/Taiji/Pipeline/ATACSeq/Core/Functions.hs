@@ -20,6 +20,7 @@ import           Bio.Pipeline.NGS
 import           Bio.Pipeline.NGS.Utils
 import           Bio.Pipeline.Report
 import           Bio.Pipeline.Utils
+import           Bio.Seq.IO                    (mkIndex)
 import           Control.Lens
 import           Control.Monad.IO.Class        (liftIO)
 import           Control.Monad.Reader          (asks)
@@ -30,6 +31,10 @@ import           Data.Maybe                    (fromJust, fromMaybe)
 import           Data.Singletons               (SingI)
 import qualified Data.Text                     as T
 import           Scientific.Workflow
+import           Shelly                        (fromText, mkdir_p, shelly,
+                                                test_f)
+import           System.FilePath               (takeDirectory)
+import           System.IO
 
 import           Taiji.Pipeline.ATACSeq.Config
 
@@ -47,8 +52,19 @@ atacMkIndex input
     | null input = return input
     | otherwise = do
         genome <- asks (fromJust . _atacseq_genome_fasta)
+        -- Generate sequence index
+        seqIndex <- asks (fromJust . _atacseq_genome_index)
+        fileExist <- liftIO $ shelly $ test_f $ fromText $ T.pack seqIndex
+        liftIO $ if fileExist
+            then hPutStrLn stderr "Sequence index exists. Skipped."
+            else do
+                shelly $ mkdir_p $ fromText $ T.pack $ takeDirectory seqIndex
+                hPutStrLn stderr "Generating sequence index"
+                mkIndex [genome] seqIndex
+        -- Generate BWA index
         dir <- asks (fromJust . _atacseq_bwa_index)
         liftIO $ bwaMkIndex genome dir
+
         return input
 
 atacDownloadData :: ATACSeqConfig config
