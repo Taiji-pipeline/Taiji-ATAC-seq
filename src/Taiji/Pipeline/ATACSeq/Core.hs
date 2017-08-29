@@ -10,6 +10,7 @@ import           Bio.Pipeline.NGS
 import           Bio.Pipeline.Utils
 import           Control.Lens
 import           Control.Monad.IO.Class                (liftIO)
+import Data.Either (either)
 import           Control.Monad.Reader                  (asks)
 import           Data.Bitraversable                    (bitraverse)
 import           Data.Maybe                            (fromJust)
@@ -65,5 +66,9 @@ builder = do
     path ["Get_Bam", "Filter_Bam", "Remove_Duplicates", "Bam_To_Bed"
         , "Merge_Bed_Prep", "Merge_Bed", "Call_Peak"]
 
-    nodeP 1 "Align_QC" 'alignQC $ return ()
+    nodeP 1 "Align_QC" [| either alignQC alignQC |] $ return ()
     ["Align"] ~> "Align_QC"
+    node' "Dup_QC" [| map (either dupQC dupQC) |] $ submitToRemote .= Just False
+    ["Remove_Duplicates"] ~> "Dup_QC"
+    nodeS "Report_QC" 'reportQC $ submitToRemote .= Just False
+    ["Align_QC", "Dup_QC"] ~> "Report_QC"

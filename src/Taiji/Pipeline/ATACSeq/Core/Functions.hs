@@ -9,7 +9,11 @@ module Taiji.Pipeline.ATACSeq.Core.Functions
     , atacGetBam
     , atacBamToBed
     , atacCallPeak
+
+    -- * QC
     , alignQC
+    , dupQC
+    , reportQC
     ) where
 
 import           Bio.Data.Bed                  (chrom)
@@ -27,6 +31,9 @@ import           Control.Monad.Reader          (asks)
 import           Data.Bifunctor                (bimap)
 import           Data.Coerce                   (coerce)
 import           Data.Either                   (lefts)
+import           Data.List                     (intercalate)
+import           Data.List.Ordered             (nubSort)
+import qualified Data.Map.Strict               as M
 import           Data.Maybe                    (fromJust, fromMaybe)
 import           Data.Monoid                   ((<>))
 import           Data.Singletons               (SingI)
@@ -102,7 +109,7 @@ atacGetBam inputs = concatMap split $ concatMap split $
             else Right $ fromSomeFile fl
 
 atacBamToBed :: ATACSeqConfig config
-             => Either (ATACSeq S (File tags1 'Bam)) (ATACSeq S (File tags2 'Bam))
+             => ATACSeqEitherTag tags1 tags2 'Bam
              -> WorkflowConfig config (ATACSeq S (File '[Gzip] 'Bed))
 atacBamToBed input = do
     dir <- asks _atacseq_output_dir >>= getPath
@@ -124,10 +131,40 @@ atacCallPeak input = do
             mode .= NoModel (-100) 200
     liftIO $ mapFileWithDefName dir ".narrowPeak" fn input
 
-alignQC :: Either (ATACSeq S (File tags1 'Bam)) (ATACSeq S (File tags2 'Bam))
-        -> IO (T.Text, [(Int, Int)])
-alignQC = either fun fun
+reportQC :: ATACSeqConfig config
+         => ( [((T.Text, Int), (Int, Int))], [((T.Text, Int), Maybe Double)])
+         -> WorkflowConfig config ()
+reportQC (align, dup) = do
+    dir <- asks _atacseq_output_dir >>= getPath
+    let output = dir ++ "/QC.tsv"
+        header = ["Sample_ID", "Replicate", "Total_Reads", "Mapped_Reads"
+            , "Percent_Mapped", "Duplication_Rate"]
+        content = flip map samples $ \x -> [T.unpack $ fst x, show $ snd x] ++
+            ( case lookup x align of
+                Just (mapped', total) -> [show total, show mapped'
+                    , show $ fromIntegral mapped' / fromIntegral total]
+                Nothing -> ["NA", "NA", "NA"] ) ++
+            ( case fromMaybe Nothing (lookup x dup) of
+                Nothing -> ["NA"]
+                Just d  -> [show d] )
+    liftIO $ writeFile output $ unlines $ map (intercalate "\t") $
+        header : content
   where
-    fun x = do
-        result <- mapM bamStat $ x^..replicates.folded.files
-        return (x^.eid, result)
+    samples = nubSort $ map fst align ++ map fst dup
+
+alignQC :: ATACSeq S (File tags 'Bam)
+        -> IO ((T.Text, Int), (Int, Int))
+alignQC e = do
+    result <- bamStat $ head $ e^..replicates.folded.files
+    return ((e^.eid, runIdentity (e^.replicates) ^. number), result)
+
+dupQC :: ATACSeq S (File tags 'Bam)
+      -> ((T.Text, Int), Maybe Double)
+dupQC e = ((e^.eid, runIdentity (e^.replicates) ^. number), result)
+  where
+    fl = runIdentity (e^.replicates) ^. files
+    result = case M.lookup "QC" (fl^.info) of
+        Just txt -> let [l] = filter (\x -> not (T.null x || "#" `T.isPrefixOf` x)) $ T.lines txt
+                        [_,unpaired,paired,secondary,unmapped,unpaired_dup,paired_dup,optical_dup,percent_dup,_] = T.splitOn "\t" l
+                    in Just $ read $ T.unpack $ percent_dup
+        Nothing -> Nothing
