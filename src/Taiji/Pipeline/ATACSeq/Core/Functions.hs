@@ -28,6 +28,7 @@ import           Data.Bifunctor                (bimap)
 import           Data.Coerce                   (coerce)
 import           Data.Either                   (lefts)
 import           Data.Maybe                    (fromJust, fromMaybe)
+import           Data.Monoid                   ((<>))
 import           Data.Singletons               (SingI)
 import qualified Data.Text                     as T
 import           Scientific.Workflow
@@ -38,14 +39,14 @@ import           System.IO
 
 import           Taiji.Pipeline.ATACSeq.Config
 
-type ATACSeqWithSomeFile = ATACSeq [Either SomeFile (SomeFile, SomeFile)]
+type ATACSeqWithSomeFile = ATACSeq N [Either SomeFile (SomeFile, SomeFile)]
 
 type ATACSeqMaybePair tag1 tag2 filetype =
-    Either (ATACSeq (File tag1 filetype))
-           (ATACSeq (File tag2 filetype, File tag2 filetype))
+    Either (ATACSeq S (File tag1 filetype))
+           (ATACSeq S (File tag2 filetype, File tag2 filetype))
 
-type ATACSeqEitherTag tag1 tag2 filetype = Either (ATACSeq (File tag1 filetype))
-                                                  (ATACSeq (File tag2 filetype))
+type ATACSeqEitherTag tag1 tag2 filetype = Either (ATACSeq S (File tag1 filetype))
+                                                  (ATACSeq S (File tag2 filetype))
 
 atacMkIndex :: ATACSeqConfig config => [a] -> WorkflowConfig config [a]
 atacMkIndex input
@@ -80,22 +81,20 @@ atacDownloadData dat = do
         else return input
     download _ x = return x
 
-atacGetFastq :: [ATACSeq [Either SomeFile (SomeFile, SomeFile)]]
-         -> [ATACSeqMaybePair '[] '[Pairend] 'Fastq]
-atacGetFastq inputs = flip concatMap inputs $ \input ->
-    fromMaybe (error "A mix of single and pairend fastq was found") $
-        splitExpByFileEither $ input & replicates.mapped.files %~ f
+atacGetFastq :: [ATACSeqWithSomeFile]
+             -> [ATACSeqMaybePair '[] '[Pairend] 'Fastq]
+atacGetFastq inputs = concatMap split $ concatMap split $
+    inputs & mapped.replicates.mapped.files %~ f
   where
     f fls = map (bimap fromSomeFile (bimap fromSomeFile fromSomeFile)) $
         filter (either (\x -> getFileType x == Fastq) g) fls
       where
         g (x,y) = getFileType x == Fastq && getFileType y == Fastq
 
-atacGetBam :: [ATACSeq [Either SomeFile (SomeFile, SomeFile)]]
+atacGetBam :: [ATACSeqWithSomeFile]
            -> [ATACSeqEitherTag '[] '[Pairend] 'Bam]
-atacGetBam inputs = flip concatMap inputs $ \input ->
-    fromMaybe (error "A mix of single and pairend fastq was found") $
-        splitExpByFileEither $ input & replicates.mapped.files %~ f
+atacGetBam inputs = concatMap split $ concatMap split $
+    inputs & mapped.replicates.mapped.files %~ f
   where
     f fls = flip map (filter (\x -> getFileType x == Bam) $ lefts fls) $ \fl ->
         if fl `hasTag` Pairend
@@ -103,29 +102,29 @@ atacGetBam inputs = flip concatMap inputs $ \input ->
             else Right $ fromSomeFile fl
 
 atacBamToBed :: ATACSeqConfig config
-             => Either (ATACSeq (File tags1 'Bam)) (ATACSeq (File tags2 'Bam))
-             -> WorkflowConfig config (ATACSeq (File '[Gzip] 'Bed))
+             => Either (ATACSeq S (File tags1 'Bam)) (ATACSeq S (File tags2 'Bam))
+             -> WorkflowConfig config (ATACSeq S (File '[Gzip] 'Bed))
 atacBamToBed input = do
     dir <- asks _atacseq_output_dir >>= getPath
     liftIO $ case input of
-        Left x -> nameWith dir "bed.gz" (\output fl ->
+        Left x -> mapFileWithDefName dir ".bed.gz" (\output fl ->
             coerce $ fun output fl) x
-        Right x -> nameWith dir "bed.gz" (\output fl ->
+        Right x -> mapFileWithDefName dir ".bed.gz" (\output fl ->
             coerce $ fun output fl) x
   where
     fun output fl = bam2Bed_ output (\x -> not $ chrom x `elem` ["chrM", "M"]) fl
 
 atacCallPeak :: (ATACSeqConfig config, SingI tags)
-             => ATACSeq (File tags 'Bed)
-             -> WorkflowConfig config (ATACSeq (File '[] 'NarrowPeak))
+             => ATACSeq S (File tags 'Bed)
+             -> WorkflowConfig config (ATACSeq S (File '[] 'NarrowPeak))
 atacCallPeak input = do
-    dir <- asks _atacseq_output_dir >>= getPath
+    dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/Peaks"))
     let fn output fl = callPeaks output fl Nothing $ do
             callSummits .= False
             mode .= NoModel (-100) 200
-    liftIO $ nameWith dir "narrowPeak" fn input
+    liftIO $ mapFileWithDefName dir ".narrowPeak" fn input
 
-alignQC :: Either (ATACSeq (File tags1 'Bam)) (ATACSeq (File tags2 'Bam))
+alignQC :: Either (ATACSeq S (File tags1 'Bam)) (ATACSeq S (File tags2 'Bam))
         -> IO (T.Text, [(Int, Int)])
 alignQC = either fun fun
   where

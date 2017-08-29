@@ -10,11 +10,11 @@ packages:
 
 - location:
     git: https://github.com/Taiji-pipeline/bio-pipelines.git
-    commit: 2eda18bc862a27767465126f6a79f7520ae2cf88
+    commit: 6f51e476a62b3cedf5e24834311317c84cbd8e8f
 
 - location:
     git: https://github.com/Taiji-pipeline/bio-experiments.git
-    commit: 1cd9f244edaacbd1c49b64df127c3943adfcf5d6
+    commit: bf1d943085c486c0ae3088a21d8375c48323d57a
 
 extra-deps:
 - bioinformatics-toolkit-0.3.2

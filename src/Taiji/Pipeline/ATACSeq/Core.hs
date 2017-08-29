@@ -31,35 +31,32 @@ builder = do
     nodePS 1 "Align" [| \input -> do
         dir <- asks _atacseq_output_dir >>= getPath
         idx <- asks (fromJust . _atacseq_bwa_index)
-        liftIO $ bitraverse
-            (bwaAlign1 (dir, "bam") idx (return ()))
-            (bwaAlign2 (dir, "bam") idx (return ()))
-            input
+        liftIO $ bwaAlign (dir, ".bam") idx (return ()) input
         |] $ return ()
     nodePS 1 "Filter_Bam" [| \input -> do
         dir <- asks _atacseq_output_dir >>= getPath
         liftIO $ bitraverse
-            (filterBam (dir, "filt.bam"))
-            (filterBam (dir, "filt.bam"))
+            (filterBam (dir, ".filt.bam"))
+            (filterBam (dir, ".filt.bam"))
             input
         |] $ return ()
     nodePS 1 "Remove_Duplicates" [| \input -> do
         dir <- asks _atacseq_output_dir >>= getPath
         picard <- fromJust <$> asks _atacseq_picard
         liftIO $ bitraverse
-            (removeDuplicates picard (dir, "filt.dedup.bam"))
-            (removeDuplicates picard (dir, "filt.dedup.bam"))
+            (removeDuplicates picard (dir, ".filt.dedup.bam"))
+            (removeDuplicates picard (dir, ".filt.dedup.bam"))
             input
         |] $ return ()
     nodePS 1 "Bam_To_Bed" 'atacBamToBed $ return ()
     node' "Merge_Bed_Prep" [| \input ->
         let f [x] = x
             f _   = error "Must contain exactly 1 file"
-        in mapped.replicates.mapped.files %~ f $ mergeExps input
+        in mapped.replicates.mapped.files %~ f $ merge input
         |] $ submitToRemote .= Just False
     nodePS 1 "Merge_Bed" [| \input -> do
         dir <- asks _atacseq_output_dir >>= getPath
-        liftIO $ concatBed (dir, "merged.bed.gz") input
+        liftIO $ concatBed (dir, ".merged.bed.gz") input
         |] $ return ()
     nodePS 1 "Call_Peak" 'atacCallPeak $ return ()
 

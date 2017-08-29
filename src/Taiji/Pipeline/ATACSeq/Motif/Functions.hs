@@ -29,7 +29,7 @@ import           System.IO.Temp                (emptyTempFile)
 import           Taiji.Pipeline.ATACSeq.Config
 
 atacMergePeaks :: ATACSeqConfig config
-               => [ATACSeq (File '[] 'NarrowPeak)]
+               => [ATACSeq S (File '[] 'NarrowPeak)]
                -> WorkflowConfig config (File '[] 'Bed)
 atacMergePeaks input = do
     dir <- asks _atacseq_output_dir >>= getPath
@@ -57,11 +57,11 @@ atacFindMotifSiteAll (ContextData openChromatin motifs) = do
 
 atacGetMotifSite :: ATACSeqConfig config
                  => Int -- ^ region around summit
-                 -> ([File '[] 'Bed], [ATACSeq (File '[] 'NarrowPeak)])
-                 -> WorkflowConfig config [ATACSeq (File '[] 'Bed)]
+                 -> ([File '[] 'Bed], [ATACSeq S (File '[] 'NarrowPeak)])
+                 -> WorkflowConfig config [ATACSeq S (File '[] 'Bed)]
 atacGetMotifSite window (tfbs, experiment) = do
     dir <- asks _atacseq_output_dir >>= getPath
-    mapM (nameWith dir "" fun) experiment
+    mapM (mapFileWithDefName dir "" fun) experiment
   where
     fun output fl = liftIO $ do
         peaks <- readBed (fl^.location) =$= mapC getSummit $$ sinkList
