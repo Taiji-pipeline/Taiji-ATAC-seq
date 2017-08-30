@@ -10,9 +10,10 @@ import           Bio.Pipeline.NGS
 import           Bio.Pipeline.Utils
 import           Control.Lens
 import           Control.Monad.IO.Class                (liftIO)
-import Data.Either (either)
 import           Control.Monad.Reader                  (asks)
 import           Data.Bitraversable                    (bitraverse)
+import           Data.Either                           (either,
+                                                        partitionEithers)
 import           Data.Maybe                            (fromJust)
 import           Scientific.Workflow
 
@@ -50,21 +51,27 @@ builder = do
             input
         |] $ return ()
     nodePS 1 "Bam_To_Bed" 'atacBamToBed $ return ()
-    node' "Merge_Bed_Prep" [| \input ->
-        let f [x] = x
+
+    node' "Get_Bed" [| \(input1, input2) ->
+        let (ls, rs) = partitionEithers $ atacGetBed input1
+            f [x] = x
             f _   = error "Must contain exactly 1 file"
-        in mapped.replicates.mapped.files %~ f $ merge input
+        in map Left (mapped.replicates.mapped.files %~ f $ merge ls) ++ map Right
+                (mapped.replicates.mapped.files %~ f $ merge $ rs ++ input2)
         |] $ submitToRemote .= Just False
+
     nodePS 1 "Merge_Bed" [| \input -> do
         dir <- asks _atacseq_output_dir >>= getPath
-        liftIO $ concatBed (dir, ".merged.bed.gz") input
+        liftIO $ either (concatBed (dir, ".merged.bed.gz"))
+            (concatBed (dir, ".merged.bed.gz")) input
         |] $ return ()
     nodePS 1 "Call_Peak" 'atacCallPeak $ return ()
 
     path ["Read_Input", "Download_Data", "Get_Fastq", "Make_Index", "Align"]
     ["Download_Data", "Align"] ~> "Get_Bam"
-    path ["Get_Bam", "Filter_Bam", "Remove_Duplicates", "Bam_To_Bed"
-        , "Merge_Bed_Prep", "Merge_Bed", "Call_Peak"]
+    path ["Get_Bam", "Filter_Bam", "Remove_Duplicates", "Bam_To_Bed"]
+    ["Download_Data", "Bam_To_Bed"] ~> "Get_Bed"
+    path ["Get_Bed", "Merge_Bed", "Call_Peak"]
 
     nodeP 1 "Align_QC" [| either alignQC alignQC |] $ return ()
     ["Align"] ~> "Align_QC"

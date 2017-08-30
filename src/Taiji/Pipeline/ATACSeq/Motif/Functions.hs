@@ -47,7 +47,7 @@ atacFindMotifSiteAll (ContextData openChromatin motifs) = do
     dir <- asks _atacseq_output_dir >>= getPath
     genome <- fromJust <$> asks _atacseq_genome_index
     liftIO $ withGenome genome $ \g -> do
-        output <- emptyTempFile dir "motif_sites_part."
+        output <- emptyTempFile dir "motif_sites_part.bed"
         (readBed (openChromatin^.location) :: Source IO BED3) =$=
             motifScan g motifs def p =$= getMotifScore g motifs def =$=
             getMotifPValue (Just (1 - p * 10)) motifs def $$ writeBed output
@@ -61,7 +61,7 @@ atacGetMotifSite :: ATACSeqConfig config
                  -> WorkflowConfig config [ATACSeq S (File '[] 'Bed)]
 atacGetMotifSite window (tfbs, experiment) = do
     dir <- asks _atacseq_output_dir >>= getPath
-    mapM (mapFileWithDefName dir "" fun) experiment
+    mapM (mapFileWithDefName (dir++"/") "" fun) experiment
   where
     fun output fl = liftIO $ do
         peaks <- readBed (fl^.location) =$= mapC getSummit $$ sinkList
