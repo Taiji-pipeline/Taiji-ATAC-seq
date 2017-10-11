@@ -32,6 +32,7 @@ library
                      , bio-pipelines
                      , bio-experiments
                      , bioinformatics-toolkit
+                     , conduit-extra
                      , containers
                      , conduit-combinators
                      , data-default
@@ -39,12 +40,15 @@ library
                      , filepath
                      , lens
                      , mtl
+                     , mmorph
                      , SciFlow >=0.6.0
                      , text
                      , temporary
+                     , transformers-base
                      , singletons
                      , split
                      , shelly
+                     , statistics
   default-language:    Haskell2010
 
 executable taiji-atac-seq

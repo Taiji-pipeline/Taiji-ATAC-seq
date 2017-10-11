@@ -23,7 +23,12 @@ import           Control.Monad.IO.Class        (liftIO)
 import           Control.Monad.Reader          (asks)
 import           Data.Default
 import           Data.Maybe                    (fromJust)
+import qualified Data.Text                     as T
 import           Scientific.Workflow
+import           Shelly                        (fromText, mkdir_p, shelly,
+                                                test_f)
+import           System.FilePath               (takeDirectory)
+import           System.IO
 import           System.IO.Temp                (emptyTempFile)
 
 import           Taiji.Pipeline.ATACSeq.Config
@@ -44,9 +49,19 @@ atacFindMotifSiteAll :: ATACSeqConfig config
                      => ContextData (File '[] 'Bed) [Motif]
                      -> WorkflowConfig config (File '[] 'Bed)
 atacFindMotifSiteAll (ContextData openChromatin motifs) = do
+    -- Generate sequence index
+    genome <- asks (fromJust . _atacseq_genome_fasta)
+    seqIndex <- asks (fromJust . _atacseq_genome_index)
+    fileExist <- liftIO $ shelly $ test_f $ fromText $ T.pack seqIndex
+    liftIO $ if fileExist
+        then hPutStrLn stderr "Sequence index exists. Skipped."
+        else do
+            shelly $ mkdir_p $ fromText $ T.pack $ takeDirectory seqIndex
+            hPutStrLn stderr "Generating sequence index"
+            mkIndex [genome] seqIndex
+
     dir <- asks _atacseq_output_dir >>= getPath
-    genome <- fromJust <$> asks _atacseq_genome_index
-    liftIO $ withGenome genome $ \g -> do
+    liftIO $ withGenome seqIndex $ \g -> do
         output <- emptyTempFile dir "motif_sites_part.bed"
         (readBed (openChromatin^.location) :: Source IO BED3) =$=
             motifScan g motifs def p =$= getMotifScore g motifs def =$=

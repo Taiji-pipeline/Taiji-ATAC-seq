@@ -12,9 +12,9 @@ import           Control.Lens
 import           Control.Monad.IO.Class                (liftIO)
 import           Control.Monad.Reader                  (asks)
 import           Data.Bitraversable                    (bitraverse)
-import           Data.Either                           (either,
-                                                        partitionEithers)
+import           Data.Either                           (either)
 import           Data.Maybe                            (fromJust)
+import           Data.Monoid                           ((<>))
 import           Scientific.Workflow
 
 import           Taiji.Pipeline.ATACSeq.Config
@@ -25,25 +25,28 @@ builder = do
     nodeS "Read_Input" [| \_ -> do
         input <- asks _atacseq_input
         liftIO $ readATACSeq input "ATAC-seq"
-        |] $ submitToRemote .= Just False
-    nodeS "Download_Data" 'atacDownloadData $ submitToRemote .= Just False
+        |] $ do
+            submitToRemote .= Just False
+            note .= "Read ATAC-seq data information from input file."
+
+    nodeS "Download_Data" 'atacDownloadData $ do
+        submitToRemote .= Just False
+        note .= "Download data."
+
     node' "Get_Fastq" 'atacGetFastq $ submitToRemote .= Just False
     node' "Get_Bam" [| \(x,y) -> atacGetBam x ++ y |] $ submitToRemote .= Just False
-    nodeS "Make_Index" 'atacMkIndex $ return ()
-    nodePS 1 "Align" [| \input -> do
-        dir <- asks _atacseq_output_dir >>= getPath
-        idx <- asks (fromJust . _atacseq_bwa_index)
-        liftIO $ bwaAlign (dir, ".bam") idx (return ()) input
-        |] $ return ()
+    nodeS "Make_Index" 'atacMkIndex $ do
+        note .= "Create BWA index."
+    nodePS 1 "Align" 'atacAlign $ return ()
     nodePS 1 "Filter_Bam" [| \input -> do
-        dir <- asks _atacseq_output_dir >>= getPath
+        dir <- asks _atacseq_output_dir >>= getPath . (<> asDir "/Bam")
         liftIO $ bitraverse
             (filterBam (dir, ".filt.bam"))
             (filterBam (dir, ".filt.bam"))
             input
         |] $ return ()
     nodePS 1 "Remove_Duplicates" [| \input -> do
-        dir <- asks _atacseq_output_dir >>= getPath
+        dir <- asks _atacseq_output_dir >>= getPath . (<> asDir "/Bam")
         picard <- fromJust <$> asks _atacseq_picard
         liftIO $ bitraverse
             (removeDuplicates picard (dir, ".filt.dedup.bam"))
@@ -53,17 +56,15 @@ builder = do
     nodePS 1 "Bam_To_Bed" 'atacBamToBed $ return ()
 
     node' "Get_Bed" [| \(input1, input2) ->
-        let (ls, rs) = partitionEithers $ atacGetBed input1
-            f [x] = x
+        let f [x] = x
             f _   = error "Must contain exactly 1 file"
-        in map Left (mapped.replicates.mapped.files %~ f $ merge ls) ++ map Right
-                (mapped.replicates.mapped.files %~ f $ merge $ rs ++ input2)
+        in mapped.replicates.mapped.files %~ f $ merge $ (atacGetBed input1) ++
+            (input2 & mapped.replicates.mapped.files %~ Right)
         |] $ submitToRemote .= Just False
 
     nodePS 1 "Merge_Bed" [| \input -> do
-        dir <- asks _atacseq_output_dir >>= getPath
-        liftIO $ either (concatBed (dir, ".merged.bed.gz"))
-            (concatBed (dir, ".merged.bed.gz")) input
+        dir <- asks _atacseq_output_dir >>= getPath . (<> asDir "/Bed")
+        liftIO $ concatBed (dir, ".merged.bed.gz") input
         |] $ return ()
     nodePS 1 "Call_Peak" 'atacCallPeak $ return ()
 
@@ -75,7 +76,17 @@ builder = do
 
     nodeP 1 "Align_QC" [| either alignQC alignQC |] $ return ()
     ["Align"] ~> "Align_QC"
+
     node' "Dup_QC" [| map (either dupQC dupQC) |] $ submitToRemote .= Just False
     ["Remove_Duplicates"] ~> "Dup_QC"
+
+    node' "Correlation_QC_Prep" [| \(beds, peaks) ->
+        let peaks' = map (\x -> (x^.eid, runIdentity (x^.replicates) ^. files)) peaks
+        in flip map beds $ \bed -> ( bed, fromJust $ lookup (bed^.eid) peaks' )
+        |] $ submitToRemote .= Just False
+    nodeP 1 "Correlation_QC" 'peakQC $ return ()
+    ["Get_Bed", "Call_Peak"] ~> "Correlation_QC_Prep"
+    path ["Correlation_QC_Prep", "Correlation_QC"]
+
     nodeS "Report_QC" 'reportQC $ submitToRemote .= Just False
     ["Align_QC", "Dup_QC"] ~> "Report_QC"

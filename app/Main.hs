@@ -4,8 +4,9 @@
 
 module Main where
 
+import           Bio.Pipeline.CallPeaks
 import           Bio.Pipeline.Utils
-import           Control.Lens                  ((.=))
+import           Control.Lens                  ((&), (.=), (.~))
 import           Data.Aeson                    (FromJSON, ToJSON)
 import           Data.Default
 import           GHC.Generics                  (Generic)
@@ -29,6 +30,7 @@ instance C.ATACSeqConfig ATACSeqOpts where
     _atacseq_genome_fasta = genome
     _atacseq_input = input
     _atacseq_picard = picard
+    _atacseq_callpeak_opts _ = def & mode .~ NoModel (-100) 200
 
 instance Default ATACSeqOpts where
     def = ATACSeqOpts

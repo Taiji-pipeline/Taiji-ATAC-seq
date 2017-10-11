@@ -1,11 +1,14 @@
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE PartialTypeSignatures #-}
+{-# LANGUAGE TemplateHaskell       #-}
 module Taiji.Pipeline.ATACSeq.Core.Functions
     ( atacMkIndex
     , atacDownloadData
     , atacGetFastq
+    , atacAlign
     , atacGetBam
     , atacGetBed
     , atacBamToBed
@@ -15,9 +18,12 @@ module Taiji.Pipeline.ATACSeq.Core.Functions
     , alignQC
     , dupQC
     , reportQC
+    , peakQC
     ) where
 
-import           Bio.Data.Bed                  (chrom)
+import           Bio.ChIPSeq                   (rpkmSortedBed)
+import           Bio.Data.Bed                  (BED, chrom, fromLine, readBed,
+                                                sortBed, splitBedBySizeLeft)
 import           Bio.Data.Experiment
 import           Bio.Pipeline.CallPeaks
 import           Bio.Pipeline.Download
@@ -26,24 +32,30 @@ import           Bio.Pipeline.NGS.Utils
 import           Bio.Pipeline.Report
 import           Bio.Pipeline.Utils
 import           Bio.Seq.IO                    (mkIndex)
+import           Conduit
 import           Control.Lens
+import           Control.Monad                 (forM)
+import           Control.Monad.Base            (liftBase)
 import           Control.Monad.IO.Class        (liftIO)
+import           Control.Monad.Morph           (hoist)
 import           Control.Monad.Reader          (asks)
 import           Data.Bifunctor                (bimap)
 import           Data.Coerce                   (coerce)
+import           Data.Conduit.Zlib             (ungzip)
 import           Data.Either                   (lefts)
 import           Data.List                     (intercalate)
 import           Data.List.Ordered             (nubSort)
 import qualified Data.Map.Strict               as M
 import           Data.Maybe                    (fromJust, fromMaybe)
 import           Data.Monoid                   ((<>))
+import           Data.Promotion.Prelude.List   (Elem)
 import           Data.Singletons               (SingI)
 import qualified Data.Text                     as T
 import           Scientific.Workflow
-import           Shelly                        (fromText, mkdir_p, shelly,
-                                                test_f)
-import           System.FilePath               (takeDirectory)
-import           System.IO
+import           Shelly                        (fromText, mkdir_p, shelly)
+import           Statistics.Correlation        (pearsonMatByRow,
+                                                spearmanMatByRow)
+import           Statistics.Matrix             (fromRows, toRowLists)
 
 import           Taiji.Pipeline.ATACSeq.Config
 
@@ -61,15 +73,6 @@ atacMkIndex input
     | null input = return input
     | otherwise = do
         genome <- asks (fromJust . _atacseq_genome_fasta)
-        -- Generate sequence index
-        seqIndex <- asks (fromJust . _atacseq_genome_index)
-        fileExist <- liftIO $ shelly $ test_f $ fromText $ T.pack seqIndex
-        liftIO $ if fileExist
-            then hPutStrLn stderr "Sequence index exists. Skipped."
-            else do
-                shelly $ mkdir_p $ fromText $ T.pack $ takeDirectory seqIndex
-                hPutStrLn stderr "Generating sequence index"
-                mkIndex [genome] seqIndex
         -- Generate BWA index
         dir <- asks (fromJust . _atacseq_bwa_index)
         liftIO $ bwaMkIndex genome dir
@@ -98,6 +101,14 @@ atacGetFastq inputs = concatMap split $ concatMap split $ concatMap split $
       where
         g (x,y) = getFileType x == Fastq && getFileType y == Fastq
 
+atacAlign :: ATACSeqConfig config
+          => ATACSeqMaybePair '[] '[Pairend] 'Fastq
+          -> WorkflowConfig config (ATACSeqEitherTag '[] '[Pairend] 'Bam)
+atacAlign input = do
+    dir <- asks _atacseq_output_dir >>= getPath . (<> asDir "/Bam")
+    idx <- asks (fromJust . _atacseq_bwa_index)
+    liftIO $ bwaAlign (dir, ".bam") idx (return ()) input
+
 atacGetBam :: [ATACSeqWithSomeFile]
            -> [ATACSeqEitherTag '[] '[Pairend] 'Bam]
 atacGetBam inputs = concatMap split $ concatMap split $ concatMap split $
@@ -109,8 +120,8 @@ atacGetBam inputs = concatMap split $ concatMap split $ concatMap split $
             else Right $ fromSomeFile fl
 
 atacGetBed :: [ATACSeqWithSomeFile]
-           -> [ATACSeqEitherTag '[] '[Gzip] 'Bed]
-atacGetBed input = concatMap split $ concatMap split $ concatMap split $
+           -> [ATACSeq S (Either (File '[] 'Bed) (File '[Gzip] 'Bed))]
+atacGetBed input = concatMap split $ concatMap split $
     input & mapped.replicates.mapped.files %~ f
   where
     f fls = flip map (filter (\x -> getFileType x == Bed) $ lefts fls) $ \fl ->
@@ -122,7 +133,7 @@ atacBamToBed :: ATACSeqConfig config
              => ATACSeqEitherTag tags1 tags2 'Bam
              -> WorkflowConfig config (ATACSeq S (File '[Gzip] 'Bed))
 atacBamToBed input = do
-    dir <- asks _atacseq_output_dir >>= getPath
+    dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/Bed"))
     liftIO $ case input of
         Left x -> mapFileWithDefName (dir++"/") ".bed.gz" (\output fl ->
             coerce $ fun output fl) x
@@ -136,9 +147,8 @@ atacCallPeak :: (ATACSeqConfig config, SingI tags)
              -> WorkflowConfig config (ATACSeq S (File '[] 'NarrowPeak))
 atacCallPeak input = do
     dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/Peaks"))
-    let fn output fl = callPeaks output fl Nothing $ do
-            callSummits .= False
-            mode .= NoModel (-100) 200
+    opts <- asks _atacseq_callpeak_opts
+    let fn output fl = callPeaks output fl Nothing opts
     liftIO $ mapFileWithDefName (dir++"/") ".narrowPeak" fn input
 
 reportQC :: ATACSeqConfig config
@@ -179,34 +189,26 @@ dupQC e = ((e^.eid, runIdentity (e^.replicates) ^. number), result)
                     in Just $ read $ T.unpack $ percent_dup
         Nothing -> Nothing
 
-        {-
-peakQC :: (Elem 'Gzip tags ~ 'True)
-       => ( ATACSeq S (File tags 'Bed)
-          , ATACSeq S
-correlation :: [Experiment] -> IO ([String], [[Double]], [[Double]])
-correlation exps = do
-    allPeaks <- mapM (readBed' . (^.location)) peaks :: IO [[BED3]]
-    regions <- fmap sortBed $ mergeBed (concat allPeaks) =$=
-        concatMapC (splitBedBySizeLeft 250) $$ sinkList
-    results <- forM exps $ \e -> do
-        let fls = filter (\x -> x^.replication /= 0 &&
-                elem "tagAlign file" (x^.keywords)) $ e^.files
+peakQC :: (Elem 'Gzip tags1 ~ 'False, Elem 'Gzip tags2 ~ 'True)
+       => ( ATACSeq N (Either (File tags1 'Bed) (File tags2 'Bed))
+          , File tags3 'NarrowPeak )
+       -> IO (Maybe ([Int], [[Double]], [[Double]]))
+peakQC (e, peakFl)
+    | length (e^.replicates) < 2 = return Nothing
+    | otherwise = do
+        regions <- fmap sortBed $ (readBed (peakFl^.location) :: Source IO BED) =$=
+            concatMapC (splitBedBySizeLeft 250) $$ sinkList
 
-        forM fls $ \fl -> do
-            let label = e^.celltype ++ "_" ++ e^.target ++ "_rep" ++
-                    show (fl^.replication)
-            cs <- runResourceT $ sourceFile (fl^.location) =$= ungzip =$=
-                linesUnboundedAsciiC =$= mapC (fromLine :: B.ByteString -> BED) $$
-                hoist liftBase (rpkmSortedBed regions)
-            return (label, cs)
-    let (labels, vs) = unzip $ concat results
-        mat = M.fromRows vs
-        cor1 = pearsonMatByRow mat
-        cor2 = spearmanMatByRow mat
-    return (labels, M.toRowLists cor1, M.toRowLists cor2)
-  where
-    peaks | head exps^.target == "ATAC" = filter (\x -> x^.replication == 0 && x^.format == NarrowPeak &&
-        "IDR" `elem` x^.keywords) $ concatMap (^.files) exps
-          | otherwise = filter (\x -> x^.replication == 0 && x^.format == BroadPeak &&
-        "Homer" `elem` x^.keywords) $ concatMap (^.files) exps
-          -}
+        (labels, values) <- fmap unzip $ forM (e^.replicates) $ \r -> do
+            readcounts <- case r^.files of
+                Left fl -> readBed (fl^.location) $$
+                    hoist liftBase (rpkmSortedBed regions)
+                Right fl -> runResourceT $ sourceFile (fl^.location) =$=
+                    ungzip =$= linesUnboundedAsciiC =$=
+                    mapC (fromLine :: _ -> BED) $$
+                    hoist liftBase (rpkmSortedBed regions)
+            return (r^.number, readcounts)
+        let mat = fromRows values
+            cor1 = pearsonMatByRow mat
+            cor2 = spearmanMatByRow mat
+        return $ Just (labels, toRowLists cor1, toRowLists cor2)
