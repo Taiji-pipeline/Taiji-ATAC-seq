@@ -6,11 +6,12 @@ module Taiji.Pipeline.ATACSeq.Motif.Functions
     , atacGetMotifSite
     ) where
 
-import           Bio.Data.Bed                  (BED, BED3 (..), BEDLike (..),
-                                                getMotifPValue, getMotifScore,
-                                                intersectBed, mergeBed,
-                                                motifScan, readBed, readBed',
-                                                writeBed, _npPeak)
+import           Bio.Data.Bed                  (BED (..), BED3 (..),
+                                                BEDLike (..), getMotifPValue,
+                                                getMotifScore, intersectBedWith,
+                                                mergeBed, motifScan, readBed,
+                                                readBed', writeBed, _npEnd,
+                                                _npPeak, _npPvalue, _npStart)
 import           Bio.Data.Experiment
 import           Bio.Motif
 import           Bio.Pipeline.Instances        ()
@@ -70,6 +71,7 @@ atacFindMotifSiteAll (ContextData openChromatin motifs) = do
   where
     p = 1e-5
 
+-- | Retrieve TFBS for each experiment
 atacGetMotifSite :: ATACSeqConfig config
                  => Int -- ^ region around summit
                  -> ([File '[] 'Bed], [ATACSeq S (File '[] 'NarrowPeak)])
@@ -81,7 +83,10 @@ atacGetMotifSite window (tfbs, experiment) = do
     fun output fl = liftIO $ do
         peaks <- readBed (fl^.location) =$= mapC getSummit $$ sinkList
         (mapM_ (readBed . (^.location)) tfbs :: Source IO BED) =$=
-            intersectBed peaks $$ writeBed output
+            intersectBedWith getPvalue peaks =$=
+            mapC (\(bed, p) -> bed{_score = Just p}) $$ writeBed output
         return $ location .~ output $ emptyFile
     getSummit pk = let c = chromStart pk + (fromJust . _npPeak) pk
-                   in BED3 (chrom pk) (c - window) (c + window)
+                   in pk { _npStart = c - window
+                         , _npEnd = c + window }
+    getPvalue = maximum . map (fromJust . _npPvalue)
