@@ -23,7 +23,7 @@ import           Control.Lens
 import           Control.Monad.IO.Class        (liftIO)
 import           Control.Monad.Reader          (asks)
 import           Data.Default
-import           Data.Maybe                    (fromJust)
+import           Data.Maybe                    (fromJust, isJust)
 import qualified Data.Text                     as T
 import           Scientific.Workflow
 import           Shelly                        (fromText, mkdir_p, shelly,
@@ -83,10 +83,11 @@ atacGetMotifSite window (tfbs, experiment) = do
     fun output fl = liftIO $ do
         peaks <- readBed (fl^.location) =$= mapC getSummit $$ sinkList
         (mapM_ (readBed . (^.location)) tfbs :: Source IO BED) =$=
-            intersectBedWith getPvalue peaks =$=
-            mapC (\(bed, p) -> bed{_score = Just p}) $$ writeBed output
+            intersectBedWith getPvalue peaks =$= filterC (isJust . snd) =$=
+            mapC (\(bed, p) -> bed{_score = p}) $$ writeBed output
         return $ location .~ output $ emptyFile
     getSummit pk = let c = chromStart pk + (fromJust . _npPeak) pk
                    in pk { _npStart = c - window
                          , _npEnd = c + window }
-    getPvalue = maximum . map (fromJust . _npPvalue)
+    getPvalue [] = Nothing
+    getPvalue xs = Just $ maximum $ map (fromJust . _npPvalue) xs
