@@ -86,7 +86,10 @@ atacDownloadData dat = do
     liftIO $ dat & traverse.replicates.traverse.files.traverse %%~ download dir
   where
     download dir input@(Left (SomeFile fl)) = if getFileType fl == SRA
-        then bimap SomeFile (bimap SomeFile SomeFile) <$>
+        then if fl `hasTag` Pairend
+            then bimap SomeFile (bimap SomeFile SomeFile) <$>
+                sraToFastq dir (coerce fl :: File '[Pairend] 'SRA)
+            else bimap SomeFile (bimap SomeFile SomeFile) <$>
                 sraToFastq dir (coerce fl :: File '[] 'SRA)
         else return input
     download _ x = return x
