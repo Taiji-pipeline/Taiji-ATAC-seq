@@ -83,16 +83,7 @@ atacDownloadData :: ATACSeqConfig config
                  -> WorkflowConfig config [ATACSeqWithSomeFile]
 atacDownloadData dat = do
     dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/Download"))
-    liftIO $ dat & traverse.replicates.traverse.files.traverse %%~ download dir
-  where
-    download dir input@(Left (SomeFile fl)) = if getFileType fl == SRA
-        then if fl `hasTag` Pairend
-            then bimap SomeFile (bimap SomeFile SomeFile) <$>
-                sraToFastq dir (coerce fl :: File '[Pairend] 'SRA)
-            else bimap SomeFile (bimap SomeFile SomeFile) <$>
-                sraToFastq dir (coerce fl :: File '[] 'SRA)
-        else return input
-    download _ x = return x
+    liftIO $ dat & traverse.replicates.traverse.files.traverse %%~ downloadFiles dir
 
 atacGetFastq :: [ATACSeqWithSomeFile]
              -> [ATACSeqMaybePair '[] '[Pairend] 'Fastq]
