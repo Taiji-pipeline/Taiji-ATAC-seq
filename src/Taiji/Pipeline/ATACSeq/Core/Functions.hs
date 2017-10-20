@@ -101,7 +101,7 @@ atacAlign :: ATACSeqConfig config
 atacAlign input = do
     dir <- asks _atacseq_output_dir >>= getPath . (<> asDir "/Bam")
     idx <- asks (fromJust . _atacseq_bwa_index)
-    liftIO $ bwaAlign (dir, ".bam") idx (return ()) input
+    liftIO $ bwaAlign (dir, ".bam") idx (bwaCores .= 2) input
 
 atacGetBam :: [ATACSeqWithSomeFile]
            -> [ATACSeqEitherTag '[] '[Pairend] 'Bam]

@@ -37,7 +37,7 @@ builder = do
     node' "Get_Bam" [| \(x,y) -> atacGetBam x ++ y |] $ submitToRemote .= Just False
     nodeS "Make_Index" 'atacMkIndex $ do
         note .= "Create BWA index."
-    nodePS 1 "Align" 'atacAlign $ return ()
+    nodePS 1 "Align" 'atacAlign $ remoteParam .= "--ntasks-per-node=2"
     nodePS 1 "Filter_Bam" [| \input -> do
         dir <- asks _atacseq_output_dir >>= getPath . (<> asDir "/Bam")
         liftIO $ bitraverse
