@@ -62,7 +62,7 @@ atacFindMotifSiteAll (ContextData openChromatin motifs) = do
             hPutStrLn stderr "Generating sequence index"
             mkIndex [genome] seqIndex
 
-    dir <- asks _atacseq_output_dir >>= getPath
+    dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/TFBS/"))
     liftIO $ withGenome seqIndex $ \g -> do
         output <- emptyTempFile dir "motif_sites_part.bed"
         (readBed (openChromatin^.location) :: Source IO BED3) =$=
@@ -78,9 +78,8 @@ atacGetMotifSite :: ATACSeqConfig config
                  -> ([File '[] 'Bed], [ATACSeq S (File '[] 'NarrowPeak)])
                  -> WorkflowConfig config [ATACSeq S (File '[] 'Bed)]
 atacGetMotifSite window (tfbs, experiment) = do
-    dir <- asks _atacseq_output_dir >>= getPath
     dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/TFBS/"))
-    mapM (mapFileWithDefName (dir++"/TFBS/") ".bed" fun) experiment
+    mapM (mapFileWithDefName dir ".bed" fun) experiment
   where
     fun output fl = liftIO $ do
         peaks <- readBed (fl^.location) =$= mapC getSummit $$ sinkList
