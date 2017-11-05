@@ -78,7 +78,8 @@ atacGetMotifSite :: ATACSeqConfig config
                  -> WorkflowConfig config [ATACSeq S (File '[] 'Bed)]
 atacGetMotifSite window (tfbs, experiment) = do
     dir <- asks _atacseq_output_dir >>= getPath
-    mapM (mapFileWithDefName (dir++"/") "" fun) experiment
+    dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/TFBS/"))
+    mapM (mapFileWithDefName (dir++"/TFBS/") ".bed" fun) experiment
   where
     fun output fl = liftIO $ do
         peaks <- readBed (fl^.location) =$= mapC getSummit $$ sinkList
