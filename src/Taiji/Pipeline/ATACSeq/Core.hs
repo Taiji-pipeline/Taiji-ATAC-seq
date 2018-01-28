@@ -35,16 +35,25 @@ builder = do
 
     node' "Get_Fastq" 'atacGetFastq $ submitToRemote .= Just False
     node' "Get_Bam" [| \(x,y) -> atacGetBam x ++ y |] $ submitToRemote .= Just False
+
     nodeS "Make_Index" 'atacMkIndex $ do
-        note .= "Create BWA index."
-    nodePS 1 "Align" 'atacAlign $ remoteParam .= "--ntasks-per-node=2"
+        note .= "Generate BWA index."
+
+    nodePS 1 "Align" 'atacAlign $ do
+        -- remoteParam .= "--ntasks-per-node=2"  -- slurm
+        remoteParam .= "-pe smp 2"  -- sge
+        note .= "Read alignment using BWA. The default parameters are: " <>
+            "bwa mem -M -k 32."
+
     nodePS 1 "Filter_Bam" [| \input -> do
         dir <- asks _atacseq_output_dir >>= getPath . (<> asDir "/Bam")
         liftIO $ bitraverse
             (filterBam (dir, ".filt.bam"))
             (filterBam (dir, ".filt.bam"))
             input
-        |] $ return ()
+        |] $ do
+            note .= "Remove low quality tags using: samtools -F 0x70c -q 30"
+
     nodePS 1 "Remove_Duplicates" [| \input -> do
         dir <- asks _atacseq_output_dir >>= getPath . (<> asDir "/Bam")
         picard <- fromJust <$> asks _atacseq_picard
@@ -52,8 +61,11 @@ builder = do
             (removeDuplicates picard (dir, ".filt.dedup.bam"))
             (removeDuplicates picard (dir, ".filt.dedup.bam"))
             input
-        |] $ return ()
-    nodePS 1 "Bam_To_Bed" 'atacBamToBed $ return ()
+        |] $ do
+            note .= "Remove duplicated reads using picard."
+
+    nodePS 1 "Bam_To_Bed" 'atacBamToBed $ do
+        note .= "Convert Bam file to Bed file."
 
     node' "Get_Bed" [| \(input1, input2) ->
         let f [x] = x
