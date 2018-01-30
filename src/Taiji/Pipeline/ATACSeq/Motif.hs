@@ -15,13 +15,21 @@ import           Taiji.Pipeline.ATACSeq.Motif.Functions
 
 builder :: Builder ()
 builder = do
-    nodeS "Merge_Peaks" 'atacMergePeaks $ return ()
+    nodeS "Merge_Peaks" 'atacMergePeaks $ do
+        note .= "Merge peaks called from different samples together to form " <>
+            "a non-overlapping set of open chromatin regions."
     nodeS "Find_TFBS_prep" [| \region -> do
         motifFile <- fromJust <$> asks _atacseq_motif_file
         motifs <- liftIO $ readMEME motifFile
         return $ ContextData region $ chunksOf 100 motifs
-        |] $ submitToRemote .= Just False
-    nodeSharedPS 1 "Find_TFBS_Union" 'atacFindMotifSiteAll $ return ()
-    nodeS "Get_TFBS" [| atacGetMotifSite 50 |] $ return ()
+        |] $ do
+            submitToRemote .= Just False
+            note .= "Prepare for parallel execution."
+    nodeSharedPS 1 "Find_TFBS_Union" 'atacFindMotifSiteAll $ do
+        note .= "Identify TF binding sites in open chromatin regions using " <>
+            "the FIMO's motif scanning algorithm. " <>
+            "Use 1e-5 as the default p-value cutoff."
+    nodeS "Get_TFBS" [| atacGetMotifSite 50 |] $ do
+        note .= ""
     path ["Call_Peak", "Merge_Peaks", "Find_TFBS_prep", "Find_TFBS_Union"]
     ["Find_TFBS_Union", "Call_Peak"] ~> "Get_TFBS"

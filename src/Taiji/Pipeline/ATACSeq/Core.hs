@@ -37,11 +37,11 @@ builder = do
     node' "Get_Bam" [| \(x,y) -> atacGetBam x ++ y |] $ submitToRemote .= Just False
 
     nodeS "Make_Index" 'atacMkIndex $ do
-        note .= "Generate BWA index."
+        note .= "Generate the BWA index."
 
     nodePS 1 "Align" 'atacAlign $ do
-        -- remoteParam .= "--ntasks-per-node=2"  -- slurm
-        remoteParam .= "-pe smp 2"  -- sge
+        remoteParam .= "--ntasks-per-node=2"  -- slurm
+        --remoteParam .= "-pe smp 2"  -- sge
         note .= "Read alignment using BWA. The default parameters are: " <>
             "bwa mem -M -k 32."
 
