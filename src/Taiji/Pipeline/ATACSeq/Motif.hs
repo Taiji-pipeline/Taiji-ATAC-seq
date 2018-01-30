@@ -8,6 +8,7 @@ import           Control.Monad.IO.Class                 (liftIO)
 import           Control.Monad.Reader                   (asks)
 import           Data.List.Split                        (chunksOf)
 import           Data.Maybe                             (fromJust)
+import           Data.Monoid                            ((<>))
 import           Scientific.Workflow
 
 import           Taiji.Pipeline.ATACSeq.Config
