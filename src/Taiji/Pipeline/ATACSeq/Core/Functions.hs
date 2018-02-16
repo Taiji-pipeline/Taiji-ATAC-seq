@@ -34,7 +34,7 @@ import           Bio.Pipeline.Utils
 import           Bio.Seq.IO                    (mkIndex)
 import           Conduit
 import           Control.Lens
-import           Control.Monad                 (forM)
+import           Control.Monad                 (forM, mzero)
 import           Control.Monad.Base            (liftBase)
 import           Control.Monad.IO.Class        (liftIO)
 import           Control.Monad.Morph           (hoist)
@@ -177,11 +177,15 @@ dupQC :: ATACSeq S (File tags 'Bam)
 dupQC e = ((e^.eid, runIdentity (e^.replicates) ^. number), result)
   where
     fl = runIdentity (e^.replicates) ^. files
-    result = case M.lookup "QC" (fl^.info) of
-        Just txt -> let (_:l:_) = filter (\x -> not (T.null x || "#" `T.isPrefixOf` x)) $ T.lines txt
-                        [_,unpaired,paired,secondary,unmapped,unpaired_dup,paired_dup,optical_dup,percent_dup,_] = T.splitOn "\t" l
-                    in Just $ read $ T.unpack $ percent_dup
-        Nothing -> Nothing
+    result = do
+        txt <- M.lookup "QC" (fl^.info)
+        let txt' = filter (\x -> not (T.null x || "#" `T.isPrefixOf` x)) $
+                T.lines txt
+        if null txt'
+            then mzero
+            else do
+                let [_,unpaired,paired,secondary,unmapped,unpaired_dup,paired_dup,optical_dup,percent_dup,_] = T.splitOn "\t" $ head txt'
+                return $ read $ T.unpack $ percent_dup
 
 peakQC :: (Elem 'Gzip tags1 ~ 'False, Elem 'Gzip tags2 ~ 'True)
        => ( ATACSeq N (Either (File tags1 'Bed) (File tags2 'Bed))
