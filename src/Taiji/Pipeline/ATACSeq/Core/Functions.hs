@@ -181,11 +181,11 @@ dupQC e = ((e^.eid, runIdentity (e^.replicates) ^. number), result)
         txt <- M.lookup "QC" (fl^.info)
         let txt' = filter (\x -> not (T.null x || "#" `T.isPrefixOf` x)) $
                 T.lines txt
-        if null txt'
-            then mzero
-            else do
-                let [_,unpaired,paired,secondary,unmapped,unpaired_dup,paired_dup,optical_dup,percent_dup,_] = T.splitOn "\t" $ head txt'
+        if length txt' > 1
+            then do
+                let [_,unpaired,paired,secondary,unmapped,unpaired_dup,paired_dup,optical_dup,percent_dup,_] = T.splitOn "\t" $ txt' !! 1
                 return $ read $ T.unpack $ percent_dup
+            else mzero
 
 peakQC :: (Elem 'Gzip tags1 ~ 'False, Elem 'Gzip tags2 ~ 'True)
        => ( ATACSeq N (Either (File tags1 'Bed) (File tags2 'Bed))
@@ -206,7 +206,10 @@ peakQC (e, peakFl)
                     mapC (fromLine :: _ -> BED) $$
                     hoist liftBase (rpkmSortedBed regions)
             return (r^.number, readcounts)
-        let mat = fromRows values
-            cor1 = pearsonMatByRow mat
-            cor2 = spearmanMatByRow mat
-        return $ Just (labels, toRowLists cor1, toRowLists cor2)
+        if null values
+            then return Nothing
+            else do
+                let mat = fromRows values
+                    cor1 = pearsonMatByRow mat
+                    cor2 = spearmanMatByRow mat
+                return $ Just (labels, toRowLists cor1, toRowLists cor2)
