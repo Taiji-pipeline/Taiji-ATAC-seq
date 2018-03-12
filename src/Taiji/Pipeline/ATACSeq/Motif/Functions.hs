@@ -52,8 +52,10 @@ atacFindMotifSiteAll :: ATACSeqConfig config
                      -> WorkflowConfig config (File '[] 'Bed)
 atacFindMotifSiteAll (ContextData openChromatin motifs) = do
     -- Generate sequence index
-    genome <- asks (fromJust . _atacseq_genome_fasta)
-    seqIndex <- asks (fromJust . _atacseq_genome_index)
+    genome <- asks ( fromMaybe (error "Genome fasta file was not specified!") .
+        _atacseq_genome_fasta )
+    seqIndex <- asks ( fromMaybe (error "Genome index file was not specified!") .
+        _atacseq_genome_index )
     fileExist <- liftIO $ shelly $ test_f $ fromText $ T.pack seqIndex
     liftIO $ if fileExist
         then hPutStrLn stderr "Sequence index exists. Skipped."

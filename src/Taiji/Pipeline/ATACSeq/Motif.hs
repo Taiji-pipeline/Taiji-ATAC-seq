@@ -7,7 +7,7 @@ import           Control.Lens
 import           Control.Monad.IO.Class                 (liftIO)
 import           Control.Monad.Reader                   (asks)
 import           Data.List.Split                        (chunksOf)
-import           Data.Maybe                             (fromJust)
+import           Data.Maybe                             (fromMaybe)
 import           Data.Monoid                            ((<>))
 import           Scientific.Workflow
 
@@ -20,7 +20,8 @@ builder = do
         note .= "Merge peaks called from different samples together to form " <>
             "a non-overlapping set of open chromatin regions."
     nodeS "Find_TFBS_prep" [| \region -> do
-        motifFile <- fromJust <$> asks _atacseq_motif_file
+        motifFile <- fromMaybe (error "Motif file is not specified!") <$>
+            asks _atacseq_motif_file
         motifs <- liftIO $ readMEME motifFile
         return $ ContextData region $ chunksOf 100 motifs
         |] $ do
