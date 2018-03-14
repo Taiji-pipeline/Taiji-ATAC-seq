@@ -23,7 +23,7 @@ import           Control.Lens
 import           Control.Monad.IO.Class        (liftIO)
 import           Control.Monad.Reader          (asks)
 import           Data.Default
-import           Data.Maybe                    (fromJust, isJust)
+import           Data.Maybe                    (fromJust, fromMaybe, isJust)
 import           Data.Monoid                   ((<>))
 import qualified Data.Text                     as T
 import           Scientific.Workflow
