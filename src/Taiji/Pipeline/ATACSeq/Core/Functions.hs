@@ -110,8 +110,8 @@ atacGetBam inputs = concatMap split $ concatMap split $ concatMap split $
   where
     f fls = flip map (filter (\x -> getFileType x == Bam) $ lefts fls) $ \fl ->
         if fl `hasTag` Pairend
-            then Left $ fromSomeFile fl
-            else Right $ fromSomeFile fl
+            then Right $ fromSomeFile fl
+            else Left $ fromSomeFile fl
 
 atacGetBed :: [ATACSeqWithSomeFile]
            -> [ATACSeq S (Either (File '[] 'Bed) (File '[Gzip] 'Bed))]
