@@ -134,7 +134,7 @@ atacBamToBed input = do
         Right x -> mapFileWithDefName (dir++"/") ".bed.gz" (\output fl ->
             coerce $ fun output fl) x
   where
-    fun output fl = bam2Bed_ output (\x -> not $ chrom x `elem` ["chrM", "M"]) fl
+    fun output fl = bam2Bed_ output (\x -> not $ (x^.chrom) `elem` ["chrM", "M"]) fl
 
 atacCallPeak :: (ATACSeqConfig config, SingI tags)
              => ATACSeq S (File tags 'Bed)
@@ -194,17 +194,18 @@ peakQC :: (Elem 'Gzip tags1 ~ 'False, Elem 'Gzip tags2 ~ 'True)
 peakQC (e, peakFl)
     | length (e^.replicates) < 2 = return Nothing
     | otherwise = do
-        regions <- fmap sortBed $ (readBed (peakFl^.location) :: Source IO BED) =$=
-            concatMapC (splitBedBySizeLeft 250) $$ sinkList
+        regions <- fmap sortBed $ runConduit $
+            (readBed (peakFl^.location) :: ConduitT () BED IO ()) .|
+            concatMapC (splitBedBySizeLeft 250) .| sinkList
 
         (labels, values) <- fmap unzip $ forM (e^.replicates) $ \r -> do
             readcounts <- case r^.files of
-                Left fl -> readBed (fl^.location) $$
-                    hoist liftBase (rpkmSortedBed regions)
+                Left fl -> runConduit $ readBed (fl^.location) .|
+                    rpkmSortedBed regions
                 Right fl -> runResourceT $ sourceFile (fl^.location) =$=
                     ungzip =$= linesUnboundedAsciiC =$=
                     mapC (fromLine :: _ -> BED) $$
-                    hoist liftBase (rpkmSortedBed regions)
+                    rpkmSortedBed regions
             return (r^.number, readcounts)
         if null values
             then return Nothing

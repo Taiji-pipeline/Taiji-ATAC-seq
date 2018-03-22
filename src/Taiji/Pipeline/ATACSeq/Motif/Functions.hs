@@ -6,14 +6,13 @@ module Taiji.Pipeline.ATACSeq.Motif.Functions
     , atacGetMotifSite
     ) where
 
-import           Bio.Data.Bed                  (BED (..), BED3 (..),
-                                                BEDLike (..), getMotifPValue,
-                                                getMotifScore, intersectBedWith,
-                                                mergeBed, motifScan, readBed,
-                                                readBed', writeBed, _npEnd,
-                                                _npPeak, _npPvalue, _npStart)
+import           Bio.Data.Bed                  (BED, BED3, BEDLike (..),
+                                                getMotifPValue, getMotifScore,
+                                                intersectBedWith, mergeBed,
+                                                motifScan, npPeak, npPvalue,
+                                                readBed, readBed', writeBed)
 import           Bio.Data.Experiment
-import           Bio.Motif
+import           Bio.Motif                     hiding (score)
 import           Bio.Pipeline.Instances        ()
 import           Bio.Pipeline.NGS
 import           Bio.Pipeline.Utils
@@ -44,7 +43,7 @@ atacMergePeaks input = do
         openChromatin = dir ++ "/openChromatin.bed"
     liftIO $ do
         peaks <- mapM (readBed' . (^.location)) fls :: IO [[BED3]]
-        mergeBed (concat peaks) $$ writeBed openChromatin
+        runConduit $ mergeBed (concat peaks) .| writeBed openChromatin
         return $ location .~ openChromatin $ emptyFile
 
 atacFindMotifSiteAll :: ATACSeqConfig config
@@ -67,9 +66,9 @@ atacFindMotifSiteAll (ContextData openChromatin motifs) = do
     dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/TFBS/"))
     liftIO $ withGenome seqIndex $ \g -> do
         output <- emptyTempFile dir "motif_sites_part.bed"
-        (readBed (openChromatin^.location) :: Source IO BED3) =$=
-            motifScan g motifs def p =$= getMotifScore g motifs def =$=
-            getMotifPValue (Just (1 - p * 10)) motifs def $$ writeBed output
+        runConduit $ (readBed (openChromatin^.location) :: ConduitT () BED3 IO ()) .|
+            motifScan g motifs def p .| getMotifScore g motifs def .|
+            getMotifPValue (Just (1 - p * 10)) motifs def .| writeBed output
         return $ location .~ output $ emptyFile
   where
     p = 1e-5
@@ -84,13 +83,13 @@ atacGetMotifSite window (tfbs, experiment) = do
     mapM (mapFileWithDefName dir ".bed" fun) experiment
   where
     fun output fl = liftIO $ do
-        peaks <- readBed (fl^.location) =$= mapC getSummit $$ sinkList
-        (mapM_ (readBed . (^.location)) tfbs :: Source IO BED) =$=
-            intersectBedWith getPvalue peaks =$= filterC (isJust . snd) =$=
-            mapC (\(bed, p) -> bed{_score = p}) $$ writeBed output
+        peaks <- runConduit $ readBed (fl^.location) .| mapC getSummit .| sinkList
+        runConduit $ (mapM_ (readBed . (^.location)) tfbs :: Source IO BED) .|
+            intersectBedWith getPvalue peaks .| filterC (isJust . snd) .|
+            mapC (\(bed, p) -> bed & score .~ p) .| writeBed output
         return $ location .~ output $ emptyFile
-    getSummit pk = let c = chromStart pk + (fromJust . _npPeak) pk
-                   in pk { _npStart = c - window
-                         , _npEnd = c + window }
+    getSummit pk = let c = pk^.chromStart + fromJust (pk^.npPeak)
+                   in pk & chromStart .~ c - window
+                         & chromEnd .~ c + window
     getPvalue [] = Nothing
-    getPvalue xs = Just $ maximum $ map (fromJust . _npPvalue) xs
+    getPvalue xs = Just $ maximum $ map (fromJust . (^.npPvalue)) xs
