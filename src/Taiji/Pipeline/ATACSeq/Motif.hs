@@ -27,7 +27,7 @@ builder = do
         |] $ do
             submitToRemote .= Just False
             note .= "Prepare for parallel execution."
-    nodeSharedPS 1 "Find_TFBS_Union" 'atacFindMotifSiteAll $ do
+    nodeSharedPS 1 "Find_TFBS_Union" [| \x -> atacFindMotifSiteAll 1e-4 x |] $ do
         note .= "Identify TF binding sites in open chromatin regions using " <>
             "the FIMO's motif scanning algorithm. " <>
             "Use 1e-5 as the default p-value cutoff."

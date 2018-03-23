@@ -47,9 +47,10 @@ atacMergePeaks input = do
         return $ location .~ openChromatin $ emptyFile
 
 atacFindMotifSiteAll :: ATACSeqConfig config
-                     => ContextData (File '[] 'Bed) [Motif]
+                     => Double     -- ^ p value
+                     -> ContextData (File '[] 'Bed) [Motif]
                      -> WorkflowConfig config (File '[] 'Bed)
-atacFindMotifSiteAll (ContextData openChromatin motifs) = do
+atacFindMotifSiteAll p (ContextData openChromatin motifs) = do
     -- Generate sequence index
     genome <- asks ( fromMaybe (error "Genome fasta file was not specified!") .
         _atacseq_genome_fasta )
@@ -70,8 +71,6 @@ atacFindMotifSiteAll (ContextData openChromatin motifs) = do
             motifScan g motifs def p .| getMotifScore g motifs def .|
             getMotifPValue (Just (1 - p * 10)) motifs def .| writeBed output
         return $ location .~ output $ emptyFile
-  where
-    p = 1e-5
 
 -- | Retrieve TFBS for each experiment
 atacGetMotifSite :: ATACSeqConfig config
