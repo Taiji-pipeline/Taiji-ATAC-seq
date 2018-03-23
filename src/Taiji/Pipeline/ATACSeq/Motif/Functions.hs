@@ -8,7 +8,7 @@ module Taiji.Pipeline.ATACSeq.Motif.Functions
 
 import           Bio.Data.Bed                  (BED, BED3, BEDLike (..),
                                                 getMotifPValue, getMotifScore,
-                                                intersectBedWith, mergeBed,
+                                                intersectBed, mergeBed,
                                                 motifScan, npPeak, npPvalue,
                                                 readBed, readBed', writeBed)
 import           Bio.Data.Experiment
@@ -85,11 +85,8 @@ atacGetMotifSite window (tfbs, experiment) = do
     fun output fl = liftIO $ do
         peaks <- runConduit $ readBed (fl^.location) .| mapC getSummit .| sinkList
         runConduit $ (mapM_ (readBed . (^.location)) tfbs :: Source IO BED) .|
-            intersectBedWith getPvalue peaks .| filterC (isJust . snd) .|
-            mapC (\(bed, p) -> bed & score .~ p) .| writeBed output
+            intersectBed peaks .| writeBed output
         return $ location .~ output $ emptyFile
     getSummit pk = let c = pk^.chromStart + fromJust (pk^.npPeak)
                    in pk & chromStart .~ c - window
                          & chromEnd .~ c + window
-    getPvalue [] = Nothing
-    getPvalue xs = Just $ maximum $ map (fromJust . (^.npPvalue)) xs
