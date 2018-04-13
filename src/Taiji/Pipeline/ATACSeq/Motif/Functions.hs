@@ -6,7 +6,11 @@ module Taiji.Pipeline.ATACSeq.Motif.Functions
     , atacGetMotifSite
     ) where
 
-import           Bio.Data.Bed
+import           Bio.Data.Bed                  (BED, BED3, BEDLike (..),
+                                                getMotifPValue, getMotifScore,
+                                                intersectBed, mergeBed,
+                                                motifScan, npPeak, npPvalue,
+                                                readBed, readBed', writeBed)
 import           Bio.Data.Experiment
 import           Bio.Motif                     hiding (score)
 import           Bio.Pipeline.Instances        ()
@@ -17,13 +21,9 @@ import           Conduit
 import           Control.Lens
 import           Control.Monad.IO.Class        (liftIO)
 import           Control.Monad.Reader          (asks)
-import qualified Data.ByteString.Char8         as B
 import           Data.Default
-import           Data.Function                 (on)
-import           Data.List
 import           Data.Maybe                    (fromJust, fromMaybe, isJust)
 import           Data.Monoid                   ((<>))
-import           Data.Ord
 import qualified Data.Text                     as T
 import           Scientific.Workflow
 import           Shelly                        (fromText, mkdir_p, shelly,
@@ -83,15 +83,9 @@ atacGetMotifSite window (tfbs, experiment) = do
   where
     fun output fl = liftIO $ do
         peaks <- runConduit $ readBed (fl^.location) .| mapC getSummit .| sinkList
-        tfbs <- runConduit $ (mapM_ (readBed . (^.location)) tfbs :: Source IO BED) .|
-            intersectBed peaks .| sinkList
-        runConduit $ mergeBedWith uniqTF tfbs .| concatC .| writeBed output
+        runConduit $ (mapM_ (readBed . (^.location)) tfbs :: Source IO BED) .|
+            intersectBed peaks .| writeBed output
         return $ location .~ output $ emptyFile
     getSummit pk = let c = pk^.chromStart + fromJust (pk^.npPeak)
                    in pk & chromStart .~ c - window
                          & chromEnd .~ c + window
-    uniqTF xs = map (minimumBy (comparing (fromJust . (^.score)))) $
-        groupBy ((==) `on` (^.name)) $ sortBy (comparing (^.name)) $
-        map changeTFName xs
-      where
-        changeTFName x = x & name %~ fmap (head . B.split '+')
