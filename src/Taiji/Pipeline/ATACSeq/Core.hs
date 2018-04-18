@@ -24,7 +24,7 @@ builder :: Builder ()
 builder = do
     nodeS "Read_Input" [| \_ -> do
         input <- asks _atacseq_input
-        liftIO $ if ".tsv" == reverse $ take 4 $ reverse input
+        liftIO $ if ".tsv" == reverse (take 4 $ reverse input)
             then readATACSeqTSV input "ATAC-seq"
             else readATACSeq input "ATAC-seq"
         |] $ do
