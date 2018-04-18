@@ -24,7 +24,9 @@ builder :: Builder ()
 builder = do
     nodeS "Read_Input" [| \_ -> do
         input <- asks _atacseq_input
-        liftIO $ readATACSeq input "ATAC-seq"
+        liftIO $ if ".tsv" == reverse $ take 4 $ reverse input
+            then readATACSeqTSV input "ATAC-seq"
+            else readATACSeq input "ATAC-seq"
         |] $ do
             submitToRemote .= Just False
             note .= "Read ATAC-seq data information from input file."
