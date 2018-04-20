@@ -86,7 +86,7 @@ atacDownloadData dat = do
     liftIO $ dat & traverse.replicates.traverse.files.traverse %%~ downloadFiles dir
 
 atacGetFastq :: [ATACSeqWithSomeFile]
-             -> [ATACSeqMaybePair '[] '[Pairend] 'Fastq]
+             -> [ATACSeqMaybePair '[] '[PairedEnd] 'Fastq]
 atacGetFastq inputs = concatMap split $ concatMap split $ concatMap split $
     inputs & mapped.replicates.mapped.files %~ f
   where
@@ -96,20 +96,20 @@ atacGetFastq inputs = concatMap split $ concatMap split $ concatMap split $
         g (x,y) = getFileType x == Fastq && getFileType y == Fastq
 
 atacAlign :: ATACSeqConfig config
-          => ATACSeqMaybePair '[] '[Pairend] 'Fastq
-          -> WorkflowConfig config (ATACSeqEitherTag '[] '[Pairend] 'Bam)
+          => ATACSeqMaybePair '[] '[PairedEnd] 'Fastq
+          -> WorkflowConfig config (ATACSeqEitherTag '[] '[PairedEnd] 'Bam)
 atacAlign input = do
     dir <- asks _atacseq_output_dir >>= getPath . (<> asDir "/Bam")
     idx <- asks (fromJust . _atacseq_bwa_index)
     liftIO $ bwaAlign (dir, ".bam") idx (bwaCores .= 2) input
 
 atacGetBam :: [ATACSeqWithSomeFile]
-           -> [ATACSeqEitherTag '[] '[Pairend] 'Bam]
+           -> [ATACSeqEitherTag '[] '[PairedEnd] 'Bam]
 atacGetBam inputs = concatMap split $ concatMap split $ concatMap split $
     inputs & mapped.replicates.mapped.files %~ f
   where
     f fls = flip map (filter (\x -> getFileType x == Bam) $ lefts fls) $ \fl ->
-        if fl `hasTag` Pairend
+        if fl `hasTag` PairedEnd
             then Right $ fromSomeFile fl
             else Left $ fromSomeFile fl
 
