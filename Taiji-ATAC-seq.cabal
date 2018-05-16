@@ -19,6 +19,8 @@ Flag exe
 
 library
   ghc-options:         -Wall
+                       -fno-warn-partial-type-signatures
+                       -fno-warn-unticked-promoted-constructors
   hs-source-dirs:      src
 
   exposed-modules:     Taiji.Pipeline.ATACSeq
@@ -41,7 +43,7 @@ library
                      , lens
                      , mtl
                      , mmorph
-                     , SciFlow >=0.6.0
+                     , SciFlow >=0.6.2
                      , text
                      , temporary
                      , transformers-base
@@ -66,7 +68,7 @@ executable taiji-atac-seq
                      , data-default
                      , bio-pipelines
                      , lens
-                     , SciFlow >=0.6.0
+                     , SciFlow >=0.6.2
                      , Taiji-ATAC-seq
 
   default-language:    Haskell2010

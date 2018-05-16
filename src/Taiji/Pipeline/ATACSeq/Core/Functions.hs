@@ -10,6 +10,7 @@ module Taiji.Pipeline.ATACSeq.Core.Functions
     , atacGetFastq
     , atacAlign
     , atacGetBam
+    , atacFilterBamSort
     , atacGetBed
     , atacBamToBed
     , atacCallPeak
@@ -28,6 +29,7 @@ import           Bio.Data.Experiment
 import           Bio.Pipeline.CallPeaks
 import           Bio.Pipeline.Download
 import           Bio.Pipeline.NGS
+import           Bio.Pipeline.NGS.BWA
 import           Bio.Pipeline.NGS.Utils
 import           Bio.Pipeline.Report
 import           Bio.Pipeline.Utils
@@ -56,17 +58,12 @@ import           Shelly                        (fromText, mkdir_p, shelly)
 import           Statistics.Correlation        (pearsonMatByRow,
                                                 spearmanMatByRow)
 import           Statistics.Matrix             (fromRows, toRowLists)
+import           System.IO.Temp                (withTempFile)
+import           Text.Printf                   (printf)
 
 import           Taiji.Pipeline.ATACSeq.Config
 
 type ATACSeqWithSomeFile = ATACSeq N [Either SomeFile (SomeFile, SomeFile)]
-
-type ATACSeqMaybePair tag1 tag2 filetype =
-    Either (ATACSeq S (File tag1 filetype))
-           (ATACSeq S (File tag2 filetype, File tag2 filetype))
-
-type ATACSeqEitherTag tag1 tag2 filetype = Either (ATACSeq S (File tag1 filetype))
-                                                  (ATACSeq S (File tag2 filetype))
 
 atacMkIndex :: ATACSeqConfig config => [a] -> WorkflowConfig config [a]
 atacMkIndex input
@@ -86,32 +83,61 @@ atacDownloadData dat = do
     liftIO $ dat & traverse.replicates.traverse.files.traverse %%~ downloadFiles dir
 
 atacGetFastq :: [ATACSeqWithSomeFile]
-             -> [ATACSeqMaybePair '[] '[PairedEnd] 'Fastq]
-atacGetFastq inputs = concatMap split $ concatMap split $ concatMap split $
+             -> [ ATACSeq S ( Either
+                    (SomeTags 'Fastq) (SomeTags 'Fastq, SomeTags 'Fastq) )]
+atacGetFastq inputs = concatMap split $ concatMap split $
     inputs & mapped.replicates.mapped.files %~ f
   where
-    f fls = map (bimap fromSomeFile (bimap fromSomeFile fromSomeFile)) $
+    f fls = map (bimap castFile (bimap castFile castFile)) $
         filter (either (\x -> getFileType x == Fastq) g) fls
       where
         g (x,y) = getFileType x == Fastq && getFileType y == Fastq
 
 atacAlign :: ATACSeqConfig config
-          => ATACSeqMaybePair '[] '[PairedEnd] 'Fastq
-          -> WorkflowConfig config (ATACSeqEitherTag '[] '[PairedEnd] 'Bam)
+          => ATACSeq S ( Either
+                (SomeTags 'Fastq) (SomeTags 'Fastq, SomeTags 'Fastq) )
+          -> WorkflowConfig config ( ATACSeq S
+                (Either (File '[] 'Bam) (File '[PairedEnd] 'Bam)) )
 atacAlign input = do
-    dir <- asks _atacseq_output_dir >>= getPath . (<> asDir "/Bam")
+    dir <- asks ((<> "/Bam") . _atacseq_output_dir) >>= getPath
     idx <- asks (fromJust . _atacseq_bwa_index)
-    liftIO $ bwaAlign (dir, ".bam") idx (bwaCores .= 2) input
+    let output = printf "%s/%s_rep%d.bam" dir (T.unpack $ input^.eid)
+            (runIdentity (input^.replicates) ^. number)
+    input & replicates.traverse.files %%~ liftIO . ( \fl -> case fl of
+        Left f ->
+            let f' = fromSomeTags f :: File '[] 'Fastq
+            in bwaAlign output idx (Left f') $ defaultBWAOpts & bwaCores .~ 2
+        Right (f1,f2) ->
+            let f1' = fromSomeTags f1 :: File '[] 'Fastq
+                f2' = fromSomeTags f2 :: File '[] 'Fastq
+            in bwaAlign output idx (Right (f1', f2')) $ defaultBWAOpts & bwaCores .~ 2
+        )
 
 atacGetBam :: [ATACSeqWithSomeFile]
-           -> [ATACSeqEitherTag '[] '[PairedEnd] 'Bam]
-atacGetBam inputs = concatMap split $ concatMap split $ concatMap split $
+           -> [ ATACSeq S (
+                    Either (File '[] 'Bam) (File '[PairedEnd] 'Bam) )]
+atacGetBam inputs = concatMap split $ concatMap split $
     inputs & mapped.replicates.mapped.files %~ f
   where
     f fls = flip map (filter (\x -> getFileType x == Bam) $ lefts fls) $ \fl ->
         if fl `hasTag` PairedEnd
             then Right $ fromSomeFile fl
             else Left $ fromSomeFile fl
+
+atacFilterBamSort :: ATACSeqConfig config
+    => ATACSeq S (Either (File '[] 'Bam) (File '[PairedEnd] 'Bam))
+    -> WorkflowConfig config ( ATACSeq S
+        (Either (File '[CoordinateSorted] 'Bam) (File '[CoordinateSorted, PairedEnd] 'Bam)) )
+atacFilterBamSort input = do
+    dir <- asks ((<> "/Bam") . _atacseq_output_dir) >>= getPath
+    let output = printf "%s/%s_rep%d_filt.bam" dir (T.unpack $ input^.eid)
+            (runIdentity (input^.replicates) ^. number)
+    input & replicates.traverse.files %%~ liftIO . either
+        (fmap Left . fun output)
+        (fmap Right . fun output)
+  where
+    fun output x = withTempFile "./" "tmp_file." $ \f _ ->
+        filterBam "./" f x >>= sortBam "./" output
 
 atacGetBed :: [ATACSeqWithSomeFile]
            -> [ATACSeq S (Either (File '[] 'Bed) (File '[Gzip] 'Bed))]
@@ -124,17 +150,15 @@ atacGetBed input = concatMap split $ concatMap split $
             else Left $ fromSomeFile fl
 
 atacBamToBed :: ATACSeqConfig config
-             => ATACSeqEitherTag tags1 tags2 'Bam
+             => ATACSeq S ( Either (File tags1 'Bam) (File tags2 'Bam) )
              -> WorkflowConfig config (ATACSeq S (File '[Gzip] 'Bed))
 atacBamToBed input = do
-    dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/Bed"))
-    liftIO $ case input of
-        Left x -> mapFileWithDefName (dir++"/") ".bed.gz" (\output fl ->
-            coerce $ fun output fl) x
-        Right x -> mapFileWithDefName (dir++"/") ".bed.gz" (\output fl ->
-            coerce $ fun output fl) x
-  where
-    fun output fl = bam2Bed_ output (\x -> not $ (x^.chrom) `elem` ["chrM", "M"]) fl
+    dir <- asks ((<> "/Bed") . _atacseq_output_dir) >>= getPath
+    let output = printf "%s/%s_rep%d.bed.gz" dir (T.unpack $ input^.eid)
+            (runIdentity (input^.replicates) ^. number)
+    input & replicates.traverse.files %%~ liftIO . ( \fl -> do
+        let fl' = either coerce coerce fl :: File '[] 'Bam
+        bam2Bed output (\x -> not $ (x^.chrom) `elem` ["chrM", "M"]) fl' )
 
 atacCallPeak :: (ATACSeqConfig config, SingI tags)
              => ATACSeq S (File tags 'Bed)
@@ -166,18 +190,18 @@ reportQC (align, dup) = do
   where
     samples = nubSort $ map fst align ++ map fst dup
 
-alignQC :: ATACSeq S (File tags 'Bam)
+alignQC :: ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))
         -> IO ((T.Text, Int), (Int, Int))
 alignQC e = do
-    result <- bamStat $ head $ e^..replicates.folded.files
+    result <- either bamStat bamStat $ runIdentity (e^.replicates) ^. files
     return ((e^.eid, runIdentity (e^.replicates) ^. number), result)
 
-dupQC :: ATACSeq S (File tags 'Bam)
+dupQC :: ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))
       -> ((T.Text, Int), Maybe Double)
-dupQC e = ((e^.eid, runIdentity (e^.replicates) ^. number), result)
+dupQC e = ( (e^.eid, runIdentity (e^.replicates) ^. number)
+          , either getResult getResult $ runIdentity (e^.replicates) ^. files )
   where
-    fl = runIdentity (e^.replicates) ^. files
-    result = do
+    getResult fl = do
         txt <- M.lookup "QC" (fl^.info)
         let txt' = filter (\x -> not (T.null x || "#" `T.isPrefixOf` x)) $
                 T.lines txt
@@ -202,9 +226,9 @@ peakQC (e, peakFl)
             readcounts <- case r^.files of
                 Left fl -> runConduit $ readBed (fl^.location) .|
                     rpkmSortedBed regions
-                Right fl -> runResourceT $ sourceFile (fl^.location) =$=
-                    ungzip =$= linesUnboundedAsciiC =$=
-                    mapC (fromLine :: _ -> BED) $$
+                Right fl -> runResourceT $ runConduit $
+                    sourceFile (fl^.location) .| ungzip .|
+                    linesUnboundedAsciiC .| mapC (fromLine :: _ -> BED) .|
                     rpkmSortedBed regions
             return (r^.number, readcounts)
         if null values

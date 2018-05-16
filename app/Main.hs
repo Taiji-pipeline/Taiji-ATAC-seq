@@ -6,7 +6,7 @@ module Main where
 
 import           Bio.Pipeline.CallPeaks
 import           Bio.Pipeline.Utils
-import           Control.Lens                  ((&), (.=), (.~))
+import           Control.Lens                  ((&), (.~))
 import           Data.Aeson                    (FromJSON, ToJSON)
 import           Data.Default
 import           GHC.Generics                  (Generic)
@@ -44,11 +44,7 @@ instance Default ATACSeqOpts where
 instance FromJSON ATACSeqOpts
 instance ToJSON ATACSeqOpts
 
--- | Instantiate the "ATACSeqConfig".
-initialization :: () -> WorkflowConfig ATACSeqOpts ()
-initialization _ = return ()
-
-mainWith defaultMainOpts { programHeader = "Taiji-ATAC-Seq" } $ do
-    nodeS "Initialization" 'initialization $ submitToRemote .= Just False
-    ["Initialization"] ~> "Read_Input"
-    builder
+mainWith defaultMainOpts
+    { programHeader = "Taiji-ATAC-Seq"
+    , workflowConfigType = Just ''ATACSeqOpts
+    } builder

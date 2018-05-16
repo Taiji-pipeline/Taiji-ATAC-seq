@@ -1,4 +1,4 @@
-resolver: lts-11.1
+resolver: lts-11.5
 
 flags:
   Taiji-ATAC-seq:
@@ -6,15 +6,25 @@ flags:
 
 packages:
 - '.'
-- '../SciFlow'
-- '../bio-pipelines'
-- '../bio-experiments'
-- '../bioinformatics-toolkit/bioinformatics-toolkit'
 
 extra-deps:
+
+#- git:     https://github.com/Taiji-pipeline/bio-pipelines.git
+#  commit:  08655609dd6fcccefa74b0da5098d91372f0598a
+- '../bio-pipelines'
+
+- git:     https://github.com/Taiji-pipeline/bio-experiments.git
+  commit:  e2ad377101e178c2ff59592c3eea3a696859f61f
+
+- git:     https://github.com/kaizhang/bioinformatics-toolkit.git
+  commit:  54aec84485f32b6e822b050c55de9886edefc7c2
+  subdirs:
+    - bioinformatics-toolkit
+
 - HsHTSLib-1.3.2.3
-- cereal-vector-0.2.0.1
 - drmaa-0.2.0
 - clustering-0.4.0
+- SciFlow-0.6.2
+
 - graphviz-2999.19.0.0
 - fgl-5.5.4.0

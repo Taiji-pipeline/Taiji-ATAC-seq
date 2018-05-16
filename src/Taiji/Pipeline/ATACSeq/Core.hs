@@ -7,15 +7,17 @@ module Taiji.Pipeline.ATACSeq.Core (builder) where
 import           Bio.Data.Experiment
 import           Bio.Data.Experiment.Parser
 import           Bio.Pipeline.NGS
+import           Bio.Pipeline.NGS.Utils
 import           Bio.Pipeline.Utils
 import           Control.Lens
 import           Control.Monad.IO.Class                (liftIO)
 import           Control.Monad.Reader                  (asks)
-import           Data.Bitraversable                    (bitraverse)
 import           Data.Either                           (either)
 import           Data.Maybe                            (fromJust)
 import           Data.Monoid                           ((<>))
+import qualified Data.Text                             as T
 import           Scientific.Workflow
+import Text.Printf (printf)
 
 import           Taiji.Pipeline.ATACSeq.Config
 import           Taiji.Pipeline.ATACSeq.Core.Functions
@@ -47,24 +49,18 @@ builder = do
         note .= "Read alignment using BWA. The default parameters are: " <>
             "bwa mem -M -k 32."
 
-    nodePS 1 "Filter_Bam" [| \input -> do
-        dir <- asks _atacseq_output_dir >>= getPath . (<> asDir "/Bam")
-        liftIO $ bitraverse
-            (filterBam (dir, ".filt.bam"))
-            (filterBam (dir, ".filt.bam"))
-            input
-        |] $ do
-            note .= "Remove low quality tags using: samtools -F 0x70c -q 30"
+    nodePS 1 "Filter_Bam" 'atacFilterBamSort $ do
+        note .= "Remove low quality tags using: samtools -F 0x70c -q 30"
 
     nodePS 1 "Remove_Duplicates" [| \input -> do
         dir <- asks _atacseq_output_dir >>= getPath . (<> asDir "/Bam")
         picard <- fromJust <$> asks _atacseq_picard
-        liftIO $ bitraverse
-            (removeDuplicates picard (dir, ".filt.dedup.bam"))
-            (removeDuplicates picard (dir, ".filt.dedup.bam"))
-            input
-        |] $ do
-            note .= "Remove duplicated reads using picard."
+        let output = printf "%s/%s_rep%d_filt_dedup.bam" dir (T.unpack $ input^.eid)
+                (runIdentity (input^.replicates) ^. number)
+        input & replicates.traverse.files %%~ liftIO . either
+            (fmap Left . removeDuplicates picard output)
+            (fmap Right . removeDuplicates picard output)
+        |] $ note .= "Remove duplicated reads using picard."
 
     nodePS 1 "Bam_To_Bed" 'atacBamToBed $ do
         note .= "Convert Bam file to Bed file."
@@ -88,10 +84,10 @@ builder = do
     ["Download_Data", "Bam_To_Bed"] ~> "Get_Bed"
     path ["Get_Bed", "Merge_Bed", "Call_Peak"]
 
-    nodeP 1 "Align_QC" [| either alignQC alignQC |] $ return ()
+    nodeP 1 "Align_QC" 'alignQC $ return ()
     ["Align"] ~> "Align_QC"
 
-    node' "Dup_QC" [| map (either dupQC dupQC) |] $ submitToRemote .= Just False
+    node' "Dup_QC" [| map dupQC |] $ submitToRemote .= Just False
     ["Remove_Duplicates"] ~> "Dup_QC"
 
     node' "Correlation_QC_Prep" [| \(beds, peaks) ->
