@@ -13,6 +13,7 @@ module Taiji.Pipeline.ATACSeq.Core.Functions
     , atacFilterBamSort
     , atacGetBed
     , atacBamToBed
+    , atacConcatBed
     , atacCallPeak
 
     -- * QC
@@ -28,23 +29,20 @@ import           Bio.Data.Bed                  (BED, chrom, fromLine, readBed,
 import           Bio.Data.Experiment
 import           Bio.Pipeline.CallPeaks
 import           Bio.Pipeline.Download
-import           Bio.Pipeline.NGS
 import           Bio.Pipeline.NGS.BWA
 import           Bio.Pipeline.NGS.Utils
 import           Bio.Pipeline.Report
 import           Bio.Pipeline.Utils
-import           Bio.Seq.IO                    (mkIndex)
 import           Conduit
 import           Control.Lens
 import           Control.Monad                 (forM, mzero)
-import           Control.Monad.Base            (liftBase)
 import           Control.Monad.IO.Class        (liftIO)
-import           Control.Monad.Morph           (hoist)
 import           Control.Monad.Reader          (asks)
 import           Data.Bifunctor                (bimap)
 import           Data.Coerce                   (coerce)
 import           Data.Conduit.Zlib             (ungzip)
 import           Data.Either                   (lefts)
+import qualified Data.IntMap.Strict            as IM
 import           Data.List                     (intercalate)
 import           Data.List.Ordered             (nubSort)
 import qualified Data.Map.Strict               as M
@@ -54,7 +52,6 @@ import           Data.Promotion.Prelude.List   (Elem)
 import           Data.Singletons               (SingI)
 import qualified Data.Text                     as T
 import           Scientific.Workflow
-import           Shelly                        (fromText, mkdir_p, shelly)
 import           Statistics.Correlation        (pearsonMatByRow,
                                                 spearmanMatByRow)
 import           Statistics.Matrix             (fromRows, toRowLists)
@@ -72,7 +69,7 @@ atacMkIndex input
         genome <- asks (fromJust . _atacseq_genome_fasta)
         -- Generate BWA index
         dir <- asks (fromJust . _atacseq_bwa_index)
-        liftIO $ bwaMkIndex genome dir
+        _ <- liftIO $ bwaMkIndex genome dir
         return input
 
 atacDownloadData :: ATACSeqConfig config
@@ -102,7 +99,7 @@ atacAlign input = do
     dir <- asks ((<> "/Bam") . _atacseq_output_dir) >>= getPath
     idx <- asks (fromJust . _atacseq_bwa_index)
     let output = printf "%s/%s_rep%d.bam" dir (T.unpack $ input^.eid)
-            (runIdentity (input^.replicates) ^. number)
+            (input^.replicates._1)
     input & replicates.traverse.files %%~ liftIO . ( \fl -> case fl of
         Left f ->
             let f' = fromSomeTags f :: File '[] 'Fastq
@@ -131,7 +128,7 @@ atacFilterBamSort :: ATACSeqConfig config
 atacFilterBamSort input = do
     dir <- asks ((<> "/Bam") . _atacseq_output_dir) >>= getPath
     let output = printf "%s/%s_rep%d_filt.bam" dir (T.unpack $ input^.eid)
-            (runIdentity (input^.replicates) ^. number)
+            (input^.replicates._1)
     input & replicates.traverse.files %%~ liftIO . either
         (fmap Left . fun output)
         (fmap Right . fun output)
@@ -155,10 +152,23 @@ atacBamToBed :: ATACSeqConfig config
 atacBamToBed input = do
     dir <- asks ((<> "/Bed") . _atacseq_output_dir) >>= getPath
     let output = printf "%s/%s_rep%d.bed.gz" dir (T.unpack $ input^.eid)
-            (runIdentity (input^.replicates) ^. number)
+            (input^.replicates._1)
     input & replicates.traverse.files %%~ liftIO . ( \fl -> do
         let fl' = either coerce coerce fl :: File '[] 'Bam
         bam2Bed output (\x -> not $ (x^.chrom) `elem` ["chrM", "M"]) fl' )
+
+atacConcatBed :: ( ATACSeqConfig config
+                 , Elem 'Gzip tags1 ~ 'False
+                 , Elem 'Gzip tags2 ~ 'True )
+              => ATACSeq N (Either (File tags1 'Bed) (File tags2 'Bed))
+              -> WorkflowConfig config (ATACSeq S (File '[Gzip] 'Bed))
+atacConcatBed input = do
+    dir <- asks ((<> "/Bed") . _atacseq_output_dir) >>= getPath
+    let output = printf "%s/%s_rep0_merged.bed.gz" dir (T.unpack $ input^.eid)
+    fl <- liftIO $ concatBed output fls
+    return $ input & replicates .~ (0, Replicate fl M.empty)
+  where
+    fls = input^..replicates.folded.files
 
 atacCallPeak :: (ATACSeqConfig config, SingI tags)
              => ATACSeq S (File tags 'Bed)
@@ -166,8 +176,10 @@ atacCallPeak :: (ATACSeqConfig config, SingI tags)
 atacCallPeak input = do
     dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/Peaks"))
     opts <- asks _atacseq_callpeak_opts
-    let fn output fl = callPeaks output fl Nothing opts
-    liftIO $ mapFileWithDefName (dir++"/") ".narrowPeak" fn input
+    let output = printf "%s/%s_rep%d.narrowPeak" dir (T.unpack $ input^.eid)
+            (input^.replicates._1)
+    input & replicates.traverse.files %%~ liftIO .
+        (\fl -> callPeaks output fl Nothing opts)
 
 reportQC :: ATACSeqConfig config
          => ( [((T.Text, Int), (Int, Int))], [((T.Text, Int), Maybe Double)])
@@ -193,13 +205,13 @@ reportQC (align, dup) = do
 alignQC :: ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))
         -> IO ((T.Text, Int), (Int, Int))
 alignQC e = do
-    result <- either bamStat bamStat $ runIdentity (e^.replicates) ^. files
-    return ((e^.eid, runIdentity (e^.replicates) ^. number), result)
+    result <- either bamStat bamStat $ e^.replicates._2.files
+    return ((e^.eid, e^.replicates._1), result)
 
 dupQC :: ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))
       -> ((T.Text, Int), Maybe Double)
-dupQC e = ( (e^.eid, runIdentity (e^.replicates) ^. number)
-          , either getResult getResult $ runIdentity (e^.replicates) ^. files )
+dupQC e = ( (e^.eid, e^.replicates._1)
+          , either getResult getResult $ e^.replicates._2.files )
   where
     getResult fl = do
         txt <- M.lookup "QC" (fl^.info)
@@ -216,13 +228,13 @@ peakQC :: (Elem 'Gzip tags1 ~ 'False, Elem 'Gzip tags2 ~ 'True)
           , File tags3 'NarrowPeak )
        -> IO (Maybe ([Int], [[Double]], [[Double]]))
 peakQC (e, peakFl)
-    | length (e^.replicates) < 2 = return Nothing
+    | IM.size (e^.replicates) < 2 = return Nothing
     | otherwise = do
         regions <- fmap sortBed $ runConduit $
             (readBed (peakFl^.location) :: ConduitT () BED IO ()) .|
             concatMapC (splitBedBySizeLeft 250) .| sinkList
 
-        (labels, values) <- fmap unzip $ forM (e^.replicates) $ \r -> do
+        (labels, values) <- fmap (unzip . IM.toList) $ forM (e^.replicates) $ \r -> do
             readcounts <- case r^.files of
                 Left fl -> runConduit $ readBed (fl^.location) .|
                     rpkmSortedBed regions
@@ -230,7 +242,7 @@ peakQC (e, peakFl)
                     sourceFile (fl^.location) .| ungzip .|
                     linesUnboundedAsciiC .| mapC (fromLine :: _ -> BED) .|
                     rpkmSortedBed regions
-            return (r^.number, readcounts)
+            return readcounts
         if null values
             then return Nothing
             else do

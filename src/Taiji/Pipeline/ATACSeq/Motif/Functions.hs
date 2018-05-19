@@ -1,5 +1,6 @@
-{-# LANGUAGE DataKinds        #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Taiji.Pipeline.ATACSeq.Motif.Functions
     ( atacMergePeaks
     , atacFindMotifSiteAll
@@ -9,20 +10,20 @@ module Taiji.Pipeline.ATACSeq.Motif.Functions
 import           Bio.Data.Bed                  (BED, BED3, BEDLike (..),
                                                 getMotifPValue, getMotifScore,
                                                 intersectBed, mergeBed,
-                                                motifScan, npPeak, npPvalue,
-                                                readBed, readBed', writeBed)
+                                                motifScan, npPeak, readBed,
+                                                readBed', writeBed)
 import           Bio.Data.Experiment
 import           Bio.Motif                     hiding (score)
 import           Bio.Pipeline.Instances        ()
-import           Bio.Pipeline.NGS
 import           Bio.Pipeline.Utils
 import           Bio.Seq.IO
 import           Conduit
 import           Control.Lens
+import           Control.Monad                 (forM)
 import           Control.Monad.IO.Class        (liftIO)
 import           Control.Monad.Reader          (asks)
 import           Data.Default
-import           Data.Maybe                    (fromJust, fromMaybe, isJust)
+import           Data.Maybe                    (fromJust, fromMaybe)
 import           Data.Monoid                   ((<>))
 import qualified Data.Text                     as T
 import           Scientific.Workflow
@@ -31,6 +32,7 @@ import           Shelly                        (fromText, mkdir_p, shelly,
 import           System.FilePath               (takeDirectory)
 import           System.IO
 import           System.IO.Temp                (emptyTempFile)
+import           Text.Printf                   (printf)
 
 import           Taiji.Pipeline.ATACSeq.Config
 
@@ -78,14 +80,16 @@ atacGetMotifSite :: ATACSeqConfig config
                  -> ([File '[] 'Bed], [ATACSeq S (File '[] 'NarrowPeak)])
                  -> WorkflowConfig config [ATACSeq S (File '[] 'Bed)]
 atacGetMotifSite window (tfbs, experiment) = do
-    dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/TFBS/"))
-    mapM (mapFileWithDefName dir ".bed" fun) experiment
-  where
-    fun output fl = liftIO $ do
+    dir <- asks ((<> "/TFBS") . _atacseq_output_dir) >>= getPath
+    forM experiment $ \e -> e & replicates.itraversed<.files %%@~ ( \i fl -> liftIO $ do
+        let output = printf "%s/%s_rep%d.bed" dir (T.unpack $ e^.eid)
+                (e^.replicates._1) (i :: Int)
         peaks <- runConduit $ readBed (fl^.location) .| mapC getSummit .| sinkList
         runConduit $ (mapM_ (readBed . (^.location)) tfbs :: Source IO BED) .|
             intersectBed peaks .| writeBed output
         return $ location .~ output $ emptyFile
+        )
+  where
     getSummit pk = let c = pk^.chromStart + fromJust (pk^.npPeak)
                    in pk & chromStart .~ c - window
                          & chromEnd .~ c + window

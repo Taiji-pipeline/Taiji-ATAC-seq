@@ -42,7 +42,6 @@ library
                      , filepath
                      , lens
                      , mtl
-                     , mmorph
                      , SciFlow >=0.6.2
                      , text
                      , temporary

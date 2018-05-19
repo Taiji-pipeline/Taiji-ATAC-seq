@@ -6,7 +6,6 @@ module Taiji.Pipeline.ATACSeq.Core (builder) where
 
 import           Bio.Data.Experiment
 import           Bio.Data.Experiment.Parser
-import           Bio.Pipeline.NGS
 import           Bio.Pipeline.NGS.Utils
 import           Bio.Pipeline.Utils
 import           Control.Lens
@@ -17,7 +16,7 @@ import           Data.Maybe                            (fromJust)
 import           Data.Monoid                           ((<>))
 import qualified Data.Text                             as T
 import           Scientific.Workflow
-import Text.Printf (printf)
+import           Text.Printf                           (printf)
 
 import           Taiji.Pipeline.ATACSeq.Config
 import           Taiji.Pipeline.ATACSeq.Core.Functions
@@ -56,7 +55,7 @@ builder = do
         dir <- asks _atacseq_output_dir >>= getPath . (<> asDir "/Bam")
         picard <- fromJust <$> asks _atacseq_picard
         let output = printf "%s/%s_rep%d_filt_dedup.bam" dir (T.unpack $ input^.eid)
-                (runIdentity (input^.replicates) ^. number)
+                (input^.replicates._1)
         input & replicates.traverse.files %%~ liftIO . either
             (fmap Left . removeDuplicates picard output)
             (fmap Right . removeDuplicates picard output)
@@ -68,14 +67,11 @@ builder = do
     node' "Get_Bed" [| \(input1, input2) ->
         let f [x] = x
             f _   = error "Must contain exactly 1 file"
-        in mapped.replicates.mapped.files %~ f $ merge $ (atacGetBed input1) ++
+        in mapped.replicates.mapped.files %~ f $ mergeExp $ (atacGetBed input1) ++
             (input2 & mapped.replicates.mapped.files %~ Right)
         |] $ submitToRemote .= Just False
 
-    nodePS 1 "Merge_Bed" [| \input -> do
-        dir <- asks _atacseq_output_dir >>= getPath . (<> asDir "/Bed")
-        liftIO $ concatBed (dir, ".merged.bed.gz") input
-        |] $ return ()
+    nodePS 1 "Merge_Bed" 'atacConcatBed $ return ()
     nodePS 1 "Call_Peak" 'atacCallPeak $ return ()
 
     path ["Read_Input", "Download_Data", "Get_Fastq", "Make_Index", "Align"]
@@ -91,7 +87,7 @@ builder = do
     ["Remove_Duplicates"] ~> "Dup_QC"
 
     node' "Correlation_QC_Prep" [| \(beds, peaks) ->
-        let peaks' = map (\x -> (x^.eid, runIdentity (x^.replicates) ^. files)) peaks
+        let peaks' = map (\x -> (x^.eid, x^.replicates._2.files)) peaks
         in flip map beds $ \bed -> ( bed, fromJust $ lookup (bed^.eid) peaks' )
         |] $ submitToRemote .= Just False
     nodeP 1 "Correlation_QC" 'peakQC $ return ()

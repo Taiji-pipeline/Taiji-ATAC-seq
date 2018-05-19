@@ -9,12 +9,11 @@ packages:
 
 extra-deps:
 
-#- git:     https://github.com/Taiji-pipeline/bio-pipelines.git
-#  commit:  08655609dd6fcccefa74b0da5098d91372f0598a
-- '../bio-pipelines'
+- git:     https://github.com/Taiji-pipeline/bio-pipelines.git
+  commit:  f582814c9151cba26ebe73ef685c68e8de115d6a
 
 - git:     https://github.com/Taiji-pipeline/bio-experiments.git
-  commit:  e2ad377101e178c2ff59592c3eea3a696859f61f
+  commit:  8d9deaef85b0311d3fe58f3b4cf21efe5e5bf151
 
 - git:     https://github.com/kaizhang/bioinformatics-toolkit.git
   commit:  54aec84485f32b6e822b050c55de9886edefc7c2
