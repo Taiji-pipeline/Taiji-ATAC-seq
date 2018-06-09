@@ -81,9 +81,9 @@ atacGetMotifSite :: ATACSeqConfig config
                  -> WorkflowConfig config [ATACSeq S (File '[] 'Bed)]
 atacGetMotifSite window (tfbs, experiment) = do
     dir <- asks ((<> "/TFBS") . _atacseq_output_dir) >>= getPath
-    forM experiment $ \e -> e & replicates.itraversed<.files %%@~ ( \i fl -> liftIO $ do
+    forM experiment $ \e -> e & replicates.traversed.files %%~ ( \fl -> liftIO $ do
         let output = printf "%s/%s_rep%d.bed" dir (T.unpack $ e^.eid)
-                (e^.replicates._1) (i :: Int)
+                (e^.replicates._1)
         peaks <- runConduit $ readBed (fl^.location) .| mapC getSummit .| sinkList
         runConduit $ (mapM_ (readBed . (^.location)) tfbs :: Source IO BED) .|
             intersectBed peaks .| writeBed output
