@@ -110,6 +110,7 @@ atacAlign input = do
             in bwaAlign output idx (Right (f1', f2')) $ defaultBWAOpts & bwaCores .~ 2
         )
 
+-- | Grab bam files
 atacGetBam :: [ATACSeqWithSomeFile]
            -> [ ATACSeq S (
                     Either (File '[] 'Bam) (File '[PairedEnd] 'Bam) )]

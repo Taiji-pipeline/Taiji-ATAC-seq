@@ -19,7 +19,7 @@ builder = do
     nodeS "Merge_Peaks" 'atacMergePeaks $ do
         note .= "Merge peaks called from different samples together to form " <>
             "a non-overlapping set of open chromatin regions."
-    nodeS "Find_TFBS_prep" [| \region -> do
+    nodeS "Find_TFBS_Prep" [| \region -> do
         motifFile <- fromMaybe (error "Motif file is not specified!") <$>
             asks _atacseq_motif_file
         motifs <- liftIO $ readMEME motifFile
@@ -31,7 +31,12 @@ builder = do
         note .= "Identify TF binding sites in open chromatin regions using " <>
             "the FIMO's motif scanning algorithm. " <>
             "Use 1e-5 as the default p-value cutoff."
-    nodeS "Get_TFBS" [| atacGetMotifSite 50 |] $ do
-        note .= ""
-    path ["Call_Peak", "Merge_Peaks", "Find_TFBS_prep", "Find_TFBS_Union"]
-    ["Find_TFBS_Union", "Call_Peak"] ~> "Get_TFBS"
+
+    node' "Get_TFBS_Prep" [| uncurry ContextData |] $ do
+        submitToRemote .= Just False
+
+    nodeSharedPS 1 "Get_TFBS" [| atacGetMotifSite 50 |] $ do
+        note .= "Retrieve motif binding sites for each sample."
+    path ["Call_Peak", "Merge_Peaks", "Find_TFBS_Prep", "Find_TFBS_Union"]
+    ["Find_TFBS_Union", "Call_Peak"] ~> "Get_TFBS_Prep"
+    ["Get_TFBS_Prep"] ~> "Get_TFBS"

@@ -19,7 +19,6 @@ import           Bio.Pipeline.Utils
 import           Bio.Seq.IO
 import           Conduit
 import           Control.Lens
-import           Control.Monad                 (forM)
 import           Control.Monad.IO.Class        (liftIO)
 import           Control.Monad.Reader          (asks)
 import           Data.Default
@@ -77,11 +76,11 @@ atacFindMotifSiteAll p (ContextData openChromatin motifs) = do
 -- | Retrieve TFBS for each experiment
 atacGetMotifSite :: ATACSeqConfig config
                  => Int -- ^ region around summit
-                 -> ([File '[] 'Bed], [ATACSeq S (File '[] 'NarrowPeak)])
-                 -> WorkflowConfig config [ATACSeq S (File '[] 'Bed)]
-atacGetMotifSite window (tfbs, experiment) = do
+                 -> ContextData [File '[] 'Bed] (ATACSeq S (File '[] 'NarrowPeak))
+                 -> WorkflowConfig config (ATACSeq S (File '[] 'Bed))
+atacGetMotifSite window (ContextData tfbs e) = do
     dir <- asks ((<> "/TFBS") . _atacseq_output_dir) >>= getPath
-    forM experiment $ \e -> e & replicates.traversed.files %%~ ( \fl -> liftIO $ do
+    e & replicates.traversed.files %%~ ( \fl -> liftIO $ do
         let output = printf "%s/%s_rep%d.bed" dir (T.unpack $ e^.eid)
                 (e^.replicates._1)
         peaks <- runConduit $ readBed (fl^.location) .| mapC getSummit .| sinkList
