@@ -23,7 +23,7 @@ module Taiji.Pipeline.ATACSeq.Core.Functions
     , peakQC
     ) where
 
-import           Bio.ChIPSeq                   (rpkmSortedBed)
+import           Bio.Data.Bed.Utils (rpkmSortedBed)
 import           Bio.Data.Bed                  (BED, chrom, fromLine, readBed,
                                                 sortBed, splitBedBySizeLeft)
 import           Bio.Data.Experiment
@@ -48,7 +48,7 @@ import           Data.List.Ordered             (nubSort)
 import qualified Data.Map.Strict               as M
 import           Data.Maybe                    (fromJust, fromMaybe)
 import           Data.Monoid                   ((<>))
-import           Data.Promotion.Prelude.List   (Elem)
+import           Data.Singletons.Prelude.List   (Elem)
 import           Data.Singletons               (SingI)
 import qualified Data.Text                     as T
 import           Scientific.Workflow

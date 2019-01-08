@@ -8,10 +8,10 @@ module Taiji.Pipeline.ATACSeq.Motif.Functions
     ) where
 
 import           Bio.Data.Bed                  (BED, BED3, BEDLike (..),
-                                                getMotifPValue, getMotifScore,
                                                 intersectBed, mergeBed,
-                                                motifScan, npPeak, readBed,
+                                                npPeak, readBed,
                                                 readBed', writeBed)
+import           Bio.Data.Bed.Utils  (getMotifPValue, getMotifScore, motifScan)
 import           Bio.Data.Experiment
 import           Bio.Motif                     hiding (score)
 import           Bio.Pipeline.Instances        ()
