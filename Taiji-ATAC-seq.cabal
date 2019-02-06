@@ -30,6 +30,7 @@ library
                        Taiji.Pipeline.ATACSeq.Config
 
   build-depends:       base >= 4.7 && < 5
+                     , aeson
                      , bio-pipelines
                      , bio-experiments
                      , bioinformatics-toolkit >= 0.6.0
@@ -49,7 +50,7 @@ library
                      , split
                      , shelly
                      , statistics >= 0.15.0.0
-                     , dense-linear-algebra
+                     , vector
   default-language:    Haskell2010
 
 executable taiji-atac-seq

@@ -10,7 +10,7 @@ packages:
 extra-deps:
 
 - git:     https://github.com/Taiji-pipeline/bio-pipelines.git
-  commit:  00a1e7e19da99850bee05a3c17fdba9695893e3e
+  commit:  46dc57d913b79d978cf2ce7a39c5ffc22a4f6c40
 
 - git:     https://github.com/Taiji-pipeline/bio-experiments.git
   commit:  049f1e93b611c01e9afc2b6a1010802e07a39af5

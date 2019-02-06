@@ -38,6 +38,7 @@ import           Control.Lens
 import           Control.Monad                 (forM, mzero)
 import           Control.Monad.IO.Class        (liftIO)
 import           Control.Monad.Reader          (asks)
+import Data.Aeson (encodeFile)
 import           Data.Bifunctor                (bimap)
 import           Data.Coerce                   (coerce)
 import           Data.Conduit.Zlib             (ungzip)
@@ -48,13 +49,12 @@ import           Data.List.Ordered             (nubSort)
 import qualified Data.Map.Strict               as M
 import           Data.Maybe                    (fromJust, fromMaybe)
 import           Data.Monoid                   ((<>))
+import qualified Data.Vector.Unboxed as U
 import           Data.Singletons.Prelude.List   (Elem)
 import           Data.Singletons               (SingI)
 import qualified Data.Text                     as T
 import           Scientific.Workflow
-import           Statistics.Correlation        (pearsonMatByRow,
-                                                spearmanMatByRow)
-import           Statistics.Matrix             (fromRows, toRowLists)
+import           Statistics.Correlation        (pearson)
 import           System.IO.Temp                (withTempFile)
 import           Text.Printf                   (printf)
 
@@ -182,6 +182,7 @@ atacCallPeak input = do
     input & replicates.traverse.files %%~ liftIO .
         (\fl -> callPeaks output fl Nothing opts)
 
+{-
 reportQC :: ATACSeqConfig config
          => ( [((T.Text, Int), (Int, Int))], [((T.Text, Int), Maybe Double)])
          -> WorkflowConfig config ()
@@ -202,17 +203,44 @@ reportQC (align, dup) = do
         header : content
   where
     samples = nubSort $ map fst align ++ map fst dup
+-}
+
+reportQC :: ATACSeqConfig config
+         => ([[QC]], [[QC]], [[QC]])
+         -> WorkflowConfig config ()
+reportQC (qc1,qc2,qc3) = do
+    dir <- asks _atacseq_output_dir >>= getPath
+    let output = dir ++ "/atac_seq.qc"
+    liftIO $ encodeFile output $ concat $ qc1 ++ qc2 ++ qc3
 
 alignQC :: ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))
-        -> IO ((T.Text, Int), (Int, Int))
+        -> IO [QC]
 alignQC e = do
-    result <- either bamStat bamStat $ e^.replicates._2.files
-    return ((e^.eid, e^.replicates._1), result)
+    stats <- either bamStat bamStat $ e^.replicates._2.files
+    let p = fromIntegral (_mapped_tags stats) / fromIntegral (_total_tags stats)
+        chrM = case lookup "chrM" (_mapped_tags_by_chrom stats) of
+            Nothing -> case lookup "M" (_mapped_tags_by_chrom stats) of
+                Nothing -> 0
+                Just x -> fromIntegral x / fromIntegral (_mapped_tags stats)
+            Just x -> fromIntegral x / fromIntegral (_mapped_tags stats)
+    return $
+        [ QC "percent_mapped_reads" name p Nothing
+        , QC "total_reads" name (fromIntegral $ _total_tags stats) Nothing
+        , QC "percent_chrM_reads" name chrM Nothing
+        ]
+  where
+    name = printf "%s_rep%d" (T.unpack $ e^.eid) (e^.replicates._1)
 
 dupQC :: ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))
-      -> ((T.Text, Int), Maybe Double)
-dupQC e = ( (e^.eid, e^.replicates._1)
-          , either getResult getResult $ e^.replicates._2.files )
+      -> [QC]
+dupQC e = case either getResult getResult (e^.replicates._2.files) of
+    Nothing -> []
+    Just r -> [ QC
+        { _qc_type = "duplication_rate"
+        , _qc_sample_name = printf "%s_rep%d"
+            (T.unpack $ e^.eid) (e^.replicates._1)
+        , _qc_result = r
+        , _qc_score = Nothing } ]
   where
     getResult fl = do
         txt <- M.lookup "QC" (fl^.info)
@@ -227,27 +255,25 @@ dupQC e = ( (e^.eid, e^.replicates._1)
 peakQC :: (Elem 'Gzip tags1 ~ 'False, Elem 'Gzip tags2 ~ 'True)
        => ( ATACSeq N (Either (File tags1 'Bed) (File tags2 'Bed))
           , File tags3 'NarrowPeak )
-       -> IO (Maybe ([Int], [[Double]], [[Double]]))
+       -> IO [QC]
 peakQC (e, peakFl)
-    | IM.size (e^.replicates) < 2 = return Nothing
+    | IM.size (e^.replicates) < 2 = return []
     | otherwise = do
         regions <- fmap sortBed $ runConduit $
             (readBed (peakFl^.location) :: ConduitT () BED IO ()) .|
             concatMapC (splitBedBySizeLeft 250) .| sinkList
-
-        (labels, values) <- fmap (unzip . IM.toList) $ forM (e^.replicates) $ \r -> do
-            readcounts <- case r^.files of
+        readcounts <- fmap IM.toList $ forM (e^.replicates) $ \r ->
+            case r^.files of
                 Left fl -> runConduit $ readBed (fl^.location) .|
                     rpkmSortedBed regions
                 Right fl -> runResourceT $ runConduit $
                     sourceFile (fl^.location) .| ungzip .|
                     linesUnboundedAsciiC .| mapC (fromLine :: _ -> BED) .|
                     rpkmSortedBed regions
-            return readcounts
-        if null values
-            then return Nothing
-            else do
-                let mat = fromRows values
-                    cor1 = pearsonMatByRow mat
-                    cor2 = spearmanMatByRow mat
-                return $ Just (labels, toRowLists cor1, toRowLists cor2)
+        return $ flip map (comb readcounts) $ \((i1, r1), (i2,r2)) ->
+            let name = printf "%s_rep%d_vs_rep%d" (T.unpack $ e^.eid)
+                    i1 i2
+            in QC "signal_correlation" name (pearson $ U.zip r1 r2) Nothing
+  where
+    comb (x:xs) = zip (repeat x) xs ++ comb xs
+    comb [] = []

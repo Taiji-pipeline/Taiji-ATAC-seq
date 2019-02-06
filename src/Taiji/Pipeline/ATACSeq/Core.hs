@@ -95,4 +95,4 @@ builder = do
     path ["Correlation_QC_Prep", "Correlation_QC"]
 
     nodeS "Report_QC" 'reportQC $ submitToRemote .= Just False
-    ["Align_QC", "Dup_QC"] ~> "Report_QC"
+    ["Align_QC", "Dup_QC", "Correlation_QC"] ~> "Report_QC"
