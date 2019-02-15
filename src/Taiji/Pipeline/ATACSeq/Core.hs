@@ -94,5 +94,14 @@ builder = do
     ["Get_Bed", "Call_Peak"] ~> "Correlation_QC_Prep"
     path ["Correlation_QC_Prep", "Correlation_QC"]
 
+    node' "Correlation_Prep" [| \(beds, peak) ->
+        let comb (x:xs) = zip (repeat x) xs ++ comb xs
+            comb [] = []
+        in zip (comb beds) $ repeat peak
+        |] $ submitToRemote .= Just False
+    ["Merge_Bed", "Merge_Peaks"] ~> "Correlation_Prep"
+    nodeP 1 "Correlation" 'atacCorrelation $ return ()
+    path ["Correlation_Prep", "Correlation"]
+
     nodeS "Report_QC" 'reportQC $ submitToRemote .= Just False
     ["Align_QC", "Dup_QC", "Correlation_QC"] ~> "Report_QC"

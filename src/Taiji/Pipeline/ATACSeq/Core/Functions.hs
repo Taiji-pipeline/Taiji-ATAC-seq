@@ -15,6 +15,7 @@ module Taiji.Pipeline.ATACSeq.Core.Functions
     , atacBamToBed
     , atacConcatBed
     , atacCallPeak
+    , atacCorrelation
 
     -- * QC
     , alignQC
@@ -277,3 +278,24 @@ peakQC (e, peakFl)
   where
     comb (x:xs) = zip (repeat x) xs ++ comb xs
     comb [] = []
+
+-- | Correlation of ATAC-seq signals between samples.
+atacCorrelation :: ( (ATACSeq S (File '[Gzip] 'Bed), ATACSeq S (File '[Gzip] 'Bed))
+                   , File '[] 'Bed )
+                -> IO QC
+atacCorrelation ((e1, e2), peakFl) = do
+    regions <- fmap sortBed $ runConduit $
+        (readBed (peakFl^.location) :: ConduitT () BED IO ()) .|
+        concatMapC (splitBedBySizeLeft 250) .| sinkList
+    let f1 = e1^.replicates._2.files.location
+        f2 = e2^.replicates._2.files.location
+    r1 <- runResourceT $ runConduit $
+        sourceFile f1 .| ungzip .|
+        linesUnboundedAsciiC .| mapC (fromLine :: _ -> BED) .|
+        rpkmSortedBed regions
+    r2 <- runResourceT $ runConduit $
+        sourceFile f2 .| ungzip .|
+        linesUnboundedAsciiC .| mapC (fromLine :: _ -> BED) .|
+        rpkmSortedBed regions
+    let name = printf "%s_vs_%s" (T.unpack $ e1^.eid) (T.unpack $ e2^.eid)
+    return $ QC "signal_correlation" name (pearson $ U.zip r1 r2) Nothing
