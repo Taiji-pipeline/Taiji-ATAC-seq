@@ -37,6 +37,6 @@ builder = do
 
     nodeSharedPS 1 "Get_TFBS" [| atacGetMotifSite 50 |] $ do
         note .= "Retrieve motif binding sites for each sample."
-    path ["Call_Peak", "Merge_Peaks", "Find_TFBS_Prep", "Find_TFBS_Union"]
-    ["Find_TFBS_Union", "Call_Peak"] ~> "Get_TFBS_Prep"
+    path ["Get_Peak", "Merge_Peaks", "Find_TFBS_Prep", "Find_TFBS_Union"]
+    ["Find_TFBS_Union", "Get_Peak"] ~> "Get_TFBS_Prep"
     ["Get_TFBS_Prep"] ~> "Get_TFBS"

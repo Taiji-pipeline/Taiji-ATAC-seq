@@ -15,6 +15,7 @@ module Taiji.Pipeline.ATACSeq.Core.Functions
     , atacBamToBed
     , atacConcatBed
     , atacCallPeak
+    , atacGetNarrowPeak
     , atacCorrelation
 
     -- * QC
@@ -183,6 +184,13 @@ atacCallPeak input = do
     input & replicates.traverse.files %%~ liftIO .
         (\fl -> callPeaks output fl Nothing opts)
 
+-- | Fetch narrowpeaks in input data.
+atacGetNarrowPeak :: [ATACSeqWithSomeFile]
+                  -> [ATACSeq S (File '[] 'NarrowPeak)]
+atacGetNarrowPeak input = concatMap split $ concatMap split $
+    input & mapped.replicates.mapped.files %~ map fromSomeFile .
+        filter (\x -> getFileType x == NarrowPeak) . lefts
+
 {-
 reportQC :: ATACSeqConfig config
          => ( [((T.Text, Int), (Int, Int))], [((T.Text, Int), Maybe Double)])
@@ -299,3 +307,25 @@ atacCorrelation ((e1, e2), peakFl) = do
         rpkmSortedBed regions
     let name = printf "%s_vs_%s" (T.unpack $ e1^.eid) (T.unpack $ e2^.eid)
     return $ QC "signal_correlation" name (pearson $ U.zip r1 r2) Nothing
+
+
+{-
+-- | Transcription Start Site (TSS) Enrichment Score
+-- The TSS enrichment calculation is a signal to noise calculation.
+-- The reads around a reference set of TSSs are collected to
+-- form an aggregate distribution of reads centered on the TSSs
+-- and extending to 1000 bp in either direction (for a total of 2000bp).
+-- This distribution is then normalized by taking the average
+-- read depth in the 100 bps at each of the end flanks of
+-- the distribution (for a total of 200bp of averaged data) and
+-- calculating a fold change at each position over that average
+-- read depth. This means that the flanks should start at 1,
+-- and if there is high read signal at transcription start
+-- sites (highly open regions of the genome) there should be an
+-- increase in signal up to a peak in the middle. We take the signal
+-- value at the center of the distribution after this normalization
+-- as our TSS enrichment metric. Used to evaluate ATAC-seq. 
+atacTSSEnrichment :: -> WorkflowConfig config QC
+atacTSSEnrichment = do
+    anno <- 
+-}

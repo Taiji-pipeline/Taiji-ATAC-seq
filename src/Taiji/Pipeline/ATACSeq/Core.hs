@@ -67,18 +67,22 @@ builder = do
     node' "Get_Bed" [| \(input1, input2) ->
         let f [x] = x
             f _   = error "Must contain exactly 1 file"
-        in mapped.replicates.mapped.files %~ f $ mergeExp $ (atacGetBed input1) ++
+        in mapped.replicates.mapped.files %~ f $ mergeExp $ atacGetBed input1 ++
             (input2 & mapped.replicates.mapped.files %~ Right)
         |] $ submitToRemote .= Just False
 
     nodePS 1 "Merge_Bed" 'atacConcatBed $ return ()
     nodePS 1 "Call_Peak" 'atacCallPeak $ return ()
 
+    node' "Get_Peak" [| \(input1, input2) -> atacGetNarrowPeak input1 ++ input2 
+        |] $ submitToRemote .= Just False
+
     path ["Read_Input", "Download_Data", "Get_Fastq", "Make_Index", "Align"]
     ["Download_Data", "Align"] ~> "Get_Bam"
     path ["Get_Bam", "Filter_Bam", "Remove_Duplicates", "Bam_To_Bed"]
     ["Download_Data", "Bam_To_Bed"] ~> "Get_Bed"
     path ["Get_Bed", "Merge_Bed", "Call_Peak"]
+    ["Download_Data", "Call_Peak"] ~> "Get_Peak"
 
     nodeP 1 "Align_QC" 'alignQC $ return ()
     ["Align"] ~> "Align_QC"
