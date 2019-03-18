@@ -1,7 +1,7 @@
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Taiji.Pipeline.ATACSeq.Motif.Functions
+module Taiji.Pipeline.ATACSeq.Functions.Motif
     ( atacMergePeaks
     , atacFindMotifSiteAll
     , atacGetMotifSite

@@ -22,6 +22,8 @@ data ATACSeqOpts = ATACSeqOpts
     , genome    :: Maybe FilePath
     , input     :: FilePath
     , picard    :: Maybe FilePath
+    , motifFile :: Maybe FilePath
+    , genomeIndex :: Maybe FilePath
     } deriving (Generic)
 
 instance C.ATACSeqConfig ATACSeqOpts where
@@ -31,6 +33,8 @@ instance C.ATACSeqConfig ATACSeqOpts where
     _atacseq_input = input
     _atacseq_picard = picard
     _atacseq_callpeak_opts _ = def & mode .~ NoModel (-100) 200
+    _atacseq_genome_index = genomeIndex
+    _atacseq_motif_file = motifFile
 
 instance Default ATACSeqOpts where
     def = ATACSeqOpts
@@ -39,6 +43,8 @@ instance Default ATACSeqOpts where
         , genome = Nothing
         , input = "input.yml"
         , picard = Nothing
+        , motifFile = Nothing
+        , genomeIndex = Nothing
         }
 
 instance FromJSON ATACSeqOpts

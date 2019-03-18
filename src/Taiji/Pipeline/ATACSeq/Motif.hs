@@ -12,7 +12,7 @@ import           Data.Monoid                            ((<>))
 import           Scientific.Workflow
 
 import           Taiji.Pipeline.ATACSeq.Config
-import           Taiji.Pipeline.ATACSeq.Motif.Functions
+import           Taiji.Pipeline.ATACSeq.Functions
 
 builder :: Builder ()
 builder = do

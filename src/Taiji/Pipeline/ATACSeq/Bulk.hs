@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
-module Taiji.Pipeline.ATACSeq.Core (builder) where
+module Taiji.Pipeline.ATACSeq.Bulk (builder) where
 
 import           Bio.Data.Experiment
 import           Bio.Data.Experiment.Parser
@@ -19,7 +19,7 @@ import           Scientific.Workflow
 import           Text.Printf                           (printf)
 
 import           Taiji.Pipeline.ATACSeq.Config
-import           Taiji.Pipeline.ATACSeq.Core.Functions
+import           Taiji.Pipeline.ATACSeq.Functions
 
 builder :: Builder ()
 builder = do
@@ -84,7 +84,7 @@ builder = do
     path ["Get_Bed", "Merge_Bed", "Call_Peak"]
     ["Download_Data", "Call_Peak"] ~> "Get_Peak"
 
-    nodeP 1 "Align_QC" 'alignQC $ return ()
+    nodeP 1 "Align_QC" 'readsMappingQC $ return ()
     ["Align"] ~> "Align_QC"
 
     node' "Dup_QC" [| map dupQC |] $ submitToRemote .= Just False
@@ -107,5 +107,5 @@ builder = do
     nodeP 1 "Correlation" 'atacCorrelation $ return ()
     path ["Correlation_Prep", "Correlation"]
 
-    nodeS "Report_QC" 'reportQC $ submitToRemote .= Just False
+    nodeS "Report_QC" 'saveQC $ submitToRemote .= Just False
     ["Align_QC", "Dup_QC", "Correlation_QC"] ~> "Report_QC"

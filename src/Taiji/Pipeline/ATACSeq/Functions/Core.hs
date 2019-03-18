@@ -4,7 +4,7 @@
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE TemplateHaskell       #-}
-module Taiji.Pipeline.ATACSeq.Core.Functions
+module Taiji.Pipeline.ATACSeq.Functions.Core
     ( atacMkIndex
     , atacDownloadData
     , atacGetFastq
@@ -19,9 +19,9 @@ module Taiji.Pipeline.ATACSeq.Core.Functions
     , atacCorrelation
 
     -- * QC
-    , alignQC
+    , saveQC 
+    , readsMappingQC
     , dupQC
-    , reportQC
     , peakQC
     ) where
 
@@ -61,6 +61,7 @@ import           System.IO.Temp                (withTempFile)
 import           Text.Printf                   (printf)
 
 import           Taiji.Pipeline.ATACSeq.Config
+import           Taiji.Types
 
 type ATACSeqWithSomeFile = ATACSeq N [Either SomeFile (SomeFile, SomeFile)]
 
@@ -191,6 +192,12 @@ atacGetNarrowPeak input = concatMap split $ concatMap split $
     input & mapped.replicates.mapped.files %~ map fromSomeFile .
         filter (\x -> getFileType x == NarrowPeak) . lefts
 
+
+-- | Remove duplicated reads in single cell ATAC-seq.
+-- deduplicate :: ATACSeq S (File '[] 'Bam)
+-- deduplicate
+
+
 {-
 reportQC :: ATACSeqConfig config
          => ( [((T.Text, Int), (Int, Int))], [((T.Text, Int), Maybe Double)])
@@ -214,17 +221,17 @@ reportQC (align, dup) = do
     samples = nubSort $ map fst align ++ map fst dup
 -}
 
-reportQC :: ATACSeqConfig config
+saveQC :: ATACSeqConfig config
          => ([[QC]], [[QC]], [[QC]])
          -> WorkflowConfig config ()
-reportQC (qc1,qc2,qc3) = do
+saveQC (qc1,qc2,qc3) = do
     dir <- asks _atacseq_output_dir >>= getPath
     let output = dir ++ "/atac_seq.qc"
     liftIO $ encodeFile output $ concat $ qc1 ++ qc2 ++ qc3
 
-alignQC :: ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))
-        -> IO [QC]
-alignQC e = do
+readsMappingQC :: ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))
+               -> IO [QC]
+readsMappingQC e = do
     stats <- either bamStat bamStat $ e^.replicates._2.files
     let p = fromIntegral (_mapped_tags stats) / fromIntegral (_total_tags stats)
         chrM = case lookup "chrM" (_mapped_tags_by_chrom stats) of
@@ -233,9 +240,9 @@ alignQC e = do
                 Just x -> fromIntegral x / fromIntegral (_mapped_tags stats)
             Just x -> fromIntegral x / fromIntegral (_mapped_tags stats)
     return $
-        [ QC "percent_mapped_reads" name p Nothing
-        , QC "total_reads" name (fromIntegral $ _total_tags stats) Nothing
-        , QC "percent_chrM_reads" name chrM Nothing
+        [ QC "percent_mapped_reads" (Single name) p Nothing
+        , QC "total_reads" (Single name) (fromIntegral $ _total_tags stats) Nothing
+        , QC "percent_chrM_reads" (Single name) chrM Nothing
         ]
   where
     name = printf "%s_rep%d" (T.unpack $ e^.eid) (e^.replicates._1)
@@ -245,8 +252,8 @@ dupQC :: ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))
 dupQC e = case either getResult getResult (e^.replicates._2.files) of
     Nothing -> []
     Just r -> [ QC
-        { _qc_type = "duplication_rate"
-        , _qc_sample_name = printf "%s_rep%d"
+        { _qc_name = "duplication_rate"
+        , _qc_sample_name = Single $ printf "%s_rep%d"
             (T.unpack $ e^.eid) (e^.replicates._1)
         , _qc_result = r
         , _qc_score = Nothing } ]
@@ -280,8 +287,9 @@ peakQC (e, peakFl)
                     linesUnboundedAsciiC .| mapC (fromLine :: _ -> BED) .|
                     rpkmSortedBed regions
         return $ flip map (comb readcounts) $ \((i1, r1), (i2,r2)) ->
-            let name = printf "%s_rep%d_vs_rep%d" (T.unpack $ e^.eid)
-                    i1 i2
+            let name = Pair 
+                    (printf "%s_rep%d" (T.unpack $ e^.eid) i1)
+                    (printf "%s_rep%d" (T.unpack $ e^.eid) i2)
             in QC "signal_correlation" name (pearson $ U.zip r1 r2) Nothing
   where
     comb (x:xs) = zip (repeat x) xs ++ comb xs
@@ -305,9 +313,8 @@ atacCorrelation ((e1, e2), peakFl) = do
         sourceFile f2 .| ungzip .|
         linesUnboundedAsciiC .| mapC (fromLine :: _ -> BED) .|
         rpkmSortedBed regions
-    let name = printf "%s_vs_%s" (T.unpack $ e1^.eid) (T.unpack $ e2^.eid)
+    let name = Pair (T.unpack $ e1^.eid) (T.unpack $ e2^.eid)
     return $ QC "signal_correlation" name (pearson $ U.zip r1 r2) Nothing
-
 
 {-
 -- | Transcription Start Site (TSS) Enrichment Score
