@@ -31,22 +31,28 @@ builder = do
         |] $ do
             submitToRemote .= Just False
             note .= "Read ATAC-seq data information from input file."
-
     nodeS "Download_Data" 'atacDownloadData $ do
         submitToRemote .= Just False
         note .= "Download data."
-
     node' "Get_Fastq" 'atacGetFastq $ submitToRemote .= Just False
-    node' "Get_Bam" [| \(x,y) -> atacGetBam x ++ y |] $ submitToRemote .= Just False
 
-    nodeS "Make_Index" 'atacMkIndex $ do
-        note .= "Generate the BWA index."
+    path ["Read_Input", "Download_Data", "Get_Fastq"]
 
+    nodeS "Make_Index" 'atacMkIndex $ note .= "Generate the BWA index."
+    node' "Align_Prep" [| fst |] $ submitToRemote .= Just False
     nodePS 1 "Align" 'atacAlign $ do
         remoteParam .= "--ntasks-per-node=2"  -- slurm
         --remoteParam .= "-pe smp 2"  -- sge
         note .= "Read alignment using BWA. The default parameters are: " <>
             "bwa mem -M -k 32."
+
+    ["Get_Fastq", "SC_Get_Fastq"] ~> "Make_Index"
+    ["Get_Fastq", "Make_Index"] ~> "Align_Prep"
+    ["Align_Prep"] ~> "Align"
+
+    node' "Get_Bam" [| \(x,y) -> atacGetBam x ++ y |] $ submitToRemote .= Just False
+
+    ["Download_Data", "Align"] ~> "Get_Bam"
 
     nodePS 1 "Filter_Bam" 'atacFilterBamSort $ do
         note .= "Remove low quality tags using: samtools -F 0x70c -q 30"
@@ -77,8 +83,6 @@ builder = do
     node' "Get_Peak" [| \(input1, input2) -> atacGetNarrowPeak input1 ++ input2 
         |] $ submitToRemote .= Just False
 
-    path ["Read_Input", "Download_Data", "Get_Fastq", "Make_Index", "Align"]
-    ["Download_Data", "Align"] ~> "Get_Bam"
     path ["Get_Bam", "Filter_Bam", "Remove_Duplicates", "Bam_To_Bed"]
     ["Download_Data", "Bam_To_Bed"] ~> "Get_Bed"
     path ["Get_Bed", "Merge_Bed", "Call_Peak"]

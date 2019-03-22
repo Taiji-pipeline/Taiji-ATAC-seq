@@ -30,13 +30,15 @@ builder = do
 
     node' "SC_Get_Fastq" 'atacGetFastq $ submitToRemote .= Just False
 
-    nodeS "SC_Make_Index" 'atacMkIndex $ do
-        note .= "Generate the BWA index."
-
+    node' "SC_Align_Prep" [| fst |] $ submitToRemote .= Just False
     nodePS 1 "SC_Align" 'atacAlign $ do
         remoteParam .= "--ntasks-per-node=2"  -- slurm
         --remoteParam .= "-pe smp 2"  -- sge
         note .= "Read alignment using BWA. The default parameters are: " <>
             "bwa mem -M -k 32."
+    nodePS 1 "SC_Filter_Bam" 'atacFilterBamSort $ do
+        note .= "Remove low quality tags using: samtools -F 0x70c -q 30"
 
-    path ["SC_Read_Input", "SC_Download_Data", "SC_Get_Fastq", "SC_Make_Index", "SC_Align"]
+    path ["SC_Read_Input", "SC_Download_Data", "SC_Get_Fastq"]
+    ["SC_Get_Fastq", "Make_Index"] ~> "SC_Align_Prep"
+    path ["SC_Align_Prep", "SC_Align", "SC_Filter_Bam"]

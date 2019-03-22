@@ -65,15 +65,15 @@ import           Taiji.Types
 
 type ATACSeqWithSomeFile = ATACSeq N [Either SomeFile (SomeFile, SomeFile)]
 
-atacMkIndex :: ATACSeqConfig config => [a] -> WorkflowConfig config [a]
-atacMkIndex input
-    | null input = return input
+atacMkIndex :: ATACSeqConfig config => ([a],[a]) -> WorkflowConfig config ()
+atacMkIndex (input1, input2)
+    | null input1 && null input2 = return ()
     | otherwise = do
         genome <- asks (fromJust . _atacseq_genome_fasta)
         -- Generate BWA index
         dir <- asks (fromJust . _atacseq_bwa_index)
         _ <- liftIO $ bwaMkIndex genome dir
-        return input
+        return ()
 
 atacDownloadData :: ATACSeqConfig config
                  => [ATACSeqWithSomeFile]
