@@ -17,6 +17,7 @@ module Taiji.Pipeline.ATACSeq.Functions.Core
     , atacCallPeak
     , atacGetNarrowPeak
     , atacCorrelation
+    , scAtacDeDup
 
     -- * QC
     , saveQC 
@@ -29,6 +30,7 @@ import           Bio.Data.Bed.Utils (rpkmSortedBed)
 import           Bio.Data.Bed                  (BED, chrom, fromLine, readBed,
                                                 sortBed, splitBedBySizeLeft)
 import           Bio.Data.Experiment
+import Bio.HTS
 import           Bio.Pipeline.CallPeaks
 import           Bio.Pipeline.Download
 import           Bio.Pipeline.NGS.BWA
@@ -55,6 +57,7 @@ import qualified Data.Vector.Unboxed as U
 import           Data.Singletons.Prelude.List   (Elem)
 import           Data.Singletons               (SingI)
 import qualified Data.Text                     as T
+import qualified Data.ByteString.Char8 as B
 import           Scientific.Workflow
 import           Statistics.Correlation        (pearson)
 import           System.IO.Temp                (withTempFile)
@@ -192,10 +195,24 @@ atacGetNarrowPeak input = concatMap split $ concatMap split $
     input & mapped.replicates.mapped.files %~ map fromSomeFile .
         filter (\x -> getFileType x == NarrowPeak) . lefts
 
-
--- | Remove duplicated reads in single cell ATAC-seq.
--- deduplicate :: ATACSeq S (File '[] 'Bam)
--- deduplicate
+scAtacDeDup :: ATACSeqConfig config
+            => ATACSeq S (Either (File '[CoordinateSorted] 'Bam)
+                         (File '[CoordinateSorted, PairedEnd] 'Bam))
+            -> WorkflowConfig config (ATACSeq S (File '[] 'Bam))
+scAtacDeDup input = do
+    dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/Bam"))
+    let output = printf "%s/%s_rep%d_filt_dedup.bam" dir (T.unpack $ input^.eid)
+            (input^.replicates._1)
+        f fl = do
+            header <- getBamHeader fl
+            runResourceT $ runConduit $ streamBam fl .|
+                markDupBy (const Nothing) .|
+                filterC (not . isDup . flag) .| sinkBam output header
+            return $ location .~ output $ emptyFile
+    input & replicates.traverse.files %%~ liftIO . f .
+        either (^.location) (^.location)
+  where
+    getBarcode bam = Just $ head $ B.split ':' $ queryName bam
 
 
 {-

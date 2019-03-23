@@ -38,7 +38,8 @@ builder = do
             "bwa mem -M -k 32."
     nodePS 1 "SC_Filter_Bam" 'atacFilterBamSort $ do
         note .= "Remove low quality tags using: samtools -F 0x70c -q 30"
+    nodePS 1 "SC_Remove_Duplicates" 'scAtacDeDup $ return ()
 
     path ["SC_Read_Input", "SC_Download_Data", "SC_Get_Fastq"]
     ["SC_Get_Fastq", "Make_Index"] ~> "SC_Align_Prep"
-    path ["SC_Align_Prep", "SC_Align", "SC_Filter_Bam"]
+    path ["SC_Align_Prep", "SC_Align", "SC_Filter_Bam", "SC_Remove_Duplicates"]

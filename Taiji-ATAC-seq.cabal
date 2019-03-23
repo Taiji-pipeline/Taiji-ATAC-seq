@@ -34,6 +34,7 @@ library
   build-depends:       base >= 4.7 && < 5
                      , aeson
                      , bio-pipelines
+                     , bytestring
                      , bio-experiments
                      , bioinformatics-toolkit >= 0.6.0
                      , conduit-extra
@@ -42,9 +43,10 @@ library
                      , data-default
                      , data-ordlist
                      , filepath
+                     , HsHTSLib >= 1.9.2
                      , lens
                      , mtl
-                     , SciFlow >=0.6.2
+                     , SciFlow >= 0.6.2
                      , text
                      , temporary
                      , transformers-base
