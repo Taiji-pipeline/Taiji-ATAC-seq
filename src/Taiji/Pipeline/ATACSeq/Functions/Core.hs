@@ -39,7 +39,7 @@ import           Bio.Pipeline.Report
 import           Bio.Pipeline.Utils
 import           Conduit
 import           Control.Lens
-import           Control.Monad                 (forM, mzero)
+import           Control.Monad                 (forM)
 import           Control.Monad.IO.Class        (liftIO)
 import           Control.Monad.Reader          (asks)
 import Data.Aeson (encodeFile)
@@ -48,10 +48,8 @@ import           Data.Coerce                   (coerce)
 import           Data.Conduit.Zlib             (ungzip)
 import           Data.Either                   (lefts)
 import qualified Data.IntMap.Strict            as IM
-import           Data.List                     (intercalate)
-import           Data.List.Ordered             (nubSort)
 import qualified Data.Map.Strict               as M
-import           Data.Maybe                    (fromJust, fromMaybe)
+import           Data.Maybe                    (fromJust)
 import           Data.Monoid                   ((<>))
 import qualified Data.Vector.Unboxed as U
 import           Data.Singletons.Prelude.List   (Elem)
@@ -206,7 +204,7 @@ scAtacDeDup input = do
         f fl = do
             header <- getBamHeader fl
             runResourceT $ runConduit $ streamBam fl .|
-                markDupBy (const Nothing) .|
+                markDupBy getBarcode .|
                 filterC (not . isDup . flag) .| sinkBam output header
             return $ location .~ output $ emptyFile
     input & replicates.traverse.files %%~ liftIO . f .
@@ -275,15 +273,12 @@ dupQC e = case either getResult getResult (e^.replicates._2.files) of
         , _qc_result = r
         , _qc_score = Nothing } ]
   where
-    getResult fl = do
-        txt <- M.lookup "QC" (fl^.info)
-        let txt' = filter (\x -> not (T.null x || "#" `T.isPrefixOf` x)) $
-                T.lines txt
-        if length txt' > 1
-            then do
-                let [_,unpaired,paired,secondary,unmapped,unpaired_dup,paired_dup,optical_dup,percent_dup,_] = T.splitOn "\t" $ txt' !! 1
-                return $ read $ T.unpack $ percent_dup
-            else mzero
+    getResult fl = case M.lookup "QC" (fl^.info) of
+        Nothing -> Nothing
+        Just txt -> let xs = T.lines txt
+                        dup = read $ T.unpack $ last $ T.words $ last xs
+                        total = read $ T.unpack $ (T.words $ head xs) !! 1
+                    in Just $ dup / total
 
 peakQC :: (Elem 'Gzip tags1 ~ 'False, Elem 'Gzip tags2 ~ 'True)
        => ( ATACSeq N (Either (File tags1 'Bed) (File tags2 'Bed))
