@@ -28,11 +28,11 @@ library
                        Taiji.Pipeline.ATACSeq.Motif
                        Taiji.Pipeline.ATACSeq.Functions
                        Taiji.Pipeline.ATACSeq.Functions.Core
+                       Taiji.Pipeline.ATACSeq.Functions.QC
                        Taiji.Pipeline.ATACSeq.Functions.Motif
                        Taiji.Pipeline.ATACSeq.Config
 
   build-depends:       base >= 4.7 && < 5
-                     , aeson
                      , bio-pipelines
                      , bytestring
                      , bio-experiments
@@ -40,6 +40,7 @@ library
                      , conduit-extra
                      , containers
                      , conduit
+                     , cereal
                      , data-default
                      , data-ordlist
                      , filepath

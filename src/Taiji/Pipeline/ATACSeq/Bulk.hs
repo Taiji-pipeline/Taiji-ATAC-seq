@@ -88,12 +88,17 @@ builder = do
     path ["Get_Bed", "Merge_Bed", "Call_Peak"]
     ["Download_Data", "Call_Peak"] ~> "Get_Peak"
 
-    nodeP 1 "Align_QC" 'readsMappingQC $ return ()
-    ["Align"] ~> "Align_QC"
+    nodeP 1 "Align_QC'" 'getMappingQC $ return ()
+    node' "Align_QC" 'combineMappingQC $ submitToRemote .= Just False
+    path ["Align", "Align_QC'", "Align_QC"]
 
-    node' "Dup_QC" [| map dupQC |] $ submitToRemote .= Just False
+    node' "Dup_QC" 'getDupQC $ submitToRemote .= Just False
     ["Remove_Duplicates"] ~> "Dup_QC"
 
+    nodeP 1 "Fragment_Size_QC" 'getFragmentQC $ return ()
+    ["Remove_Duplicates"] ~> "Fragment_Size_QC"
+
+    {-
     node' "Correlation_QC_Prep" [| \(beds, peaks) ->
         let peaks' = map (\x -> (x^.eid, x^.replicates._2.files)) peaks
         in flip map beds $ \bed -> ( bed, fromJust $ lookup (bed^.eid) peaks' )
@@ -101,7 +106,10 @@ builder = do
     nodeP 1 "Correlation_QC" 'peakQC $ return ()
     ["Get_Bed", "Call_Peak"] ~> "Correlation_QC_Prep"
     path ["Correlation_QC_Prep", "Correlation_QC"]
+    -}
 
+    {-
+    -- Calculate correlation between experiments
     node' "Correlation_Prep" [| \(beds, peak) ->
         let comb (x:xs) = zip (repeat x) xs ++ comb xs
             comb [] = []
@@ -110,6 +118,7 @@ builder = do
     ["Merge_Bed", "Merge_Peaks"] ~> "Correlation_Prep"
     nodeP 1 "Correlation" 'atacCorrelation $ return ()
     path ["Correlation_Prep", "Correlation"]
+    -}
 
     nodeS "Report_QC" 'saveQC $ submitToRemote .= Just False
-    ["Align_QC", "Dup_QC", "Correlation_QC"] ~> "Report_QC"
+    ["Align_QC", "Dup_QC", "Fragment_Size_QC"] ~> "Report_QC"

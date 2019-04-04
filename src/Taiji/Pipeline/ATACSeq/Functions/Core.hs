@@ -16,17 +16,9 @@ module Taiji.Pipeline.ATACSeq.Functions.Core
     , atacConcatBed
     , atacCallPeak
     , atacGetNarrowPeak
-    , atacCorrelation
     , scAtacDeDup
-
-    -- * QC
-    , saveQC 
-    , readsMappingQC
-    , dupQC
-    , peakQC
     ) where
 
-import           Bio.Data.Bed.Utils (rpkmSortedBed)
 import           Bio.Data.Bed                  (BED, chrom, fromLine, readBed,
                                                 sortBed, splitBedBySizeLeft)
 import           Bio.Data.Experiment
@@ -35,14 +27,12 @@ import           Bio.Pipeline.CallPeaks
 import           Bio.Pipeline.Download
 import           Bio.Pipeline.NGS.BWA
 import           Bio.Pipeline.NGS.Utils
-import           Bio.Pipeline.Report
 import           Bio.Pipeline.Utils
 import           Conduit
 import           Control.Lens
 import           Control.Monad                 (forM)
 import           Control.Monad.IO.Class        (liftIO)
 import           Control.Monad.Reader          (asks)
-import Data.Aeson (encodeFile)
 import           Data.Bifunctor                (bimap)
 import           Data.Coerce                   (coerce)
 import           Data.Conduit.Zlib             (ungzip)
@@ -62,7 +52,6 @@ import           System.IO.Temp                (withTempFile)
 import           Text.Printf                   (printf)
 
 import           Taiji.Pipeline.ATACSeq.Config
-import           Taiji.Types
 
 type ATACSeqWithSomeFile = ATACSeq N [Either SomeFile (SomeFile, SomeFile)]
 
@@ -234,117 +223,4 @@ reportQC (align, dup) = do
         header : content
   where
     samples = nubSort $ map fst align ++ map fst dup
--}
-
-saveQC :: ATACSeqConfig config
-         => ([[QC]], [[QC]], [[QC]])
-         -> WorkflowConfig config ()
-saveQC (qc1,qc2,qc3) = do
-    dir <- asks _atacseq_output_dir >>= getPath
-    let output = dir ++ "/atac_seq.qc"
-    liftIO $ encodeFile output $ concat $ qc1 ++ qc2 ++ qc3
-
-readsMappingQC :: ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))
-               -> IO [QC]
-readsMappingQC e = do
-    stats <- either bamStat bamStat $ e^.replicates._2.files
-    let p = fromIntegral (_mapped_tags stats) / fromIntegral (_total_tags stats)
-        chrM = case lookup "chrM" (_mapped_tags_by_chrom stats) of
-            Nothing -> case lookup "M" (_mapped_tags_by_chrom stats) of
-                Nothing -> 0
-                Just x -> fromIntegral x / fromIntegral (_mapped_tags stats)
-            Just x -> fromIntegral x / fromIntegral (_mapped_tags stats)
-    return $
-        [ QC "percent_mapped_reads" (Single name) p Nothing
-        , QC "total_reads" (Single name) (fromIntegral $ _total_tags stats) Nothing
-        , QC "percent_chrM_reads" (Single name) chrM Nothing
-        ]
-  where
-    name = printf "%s_rep%d" (T.unpack $ e^.eid) (e^.replicates._1)
-
-dupQC :: ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))
-      -> [QC]
-dupQC e = case either getResult getResult (e^.replicates._2.files) of
-    Nothing -> []
-    Just r -> [ QC
-        { _qc_name = "duplication_rate"
-        , _qc_sample_name = Single $ printf "%s_rep%d"
-            (T.unpack $ e^.eid) (e^.replicates._1)
-        , _qc_result = r
-        , _qc_score = Nothing } ]
-  where
-    getResult fl = case M.lookup "QC" (fl^.info) of
-        Nothing -> Nothing
-        Just txt -> let xs = T.lines txt
-                        dup = read $ T.unpack $ last $ T.words $ last xs
-                        total = read $ T.unpack $ (T.words $ head xs) !! 1
-                    in Just $ dup / total
-
-peakQC :: (Elem 'Gzip tags1 ~ 'False, Elem 'Gzip tags2 ~ 'True)
-       => ( ATACSeq N (Either (File tags1 'Bed) (File tags2 'Bed))
-          , File tags3 'NarrowPeak )
-       -> IO [QC]
-peakQC (e, peakFl)
-    | IM.size (e^.replicates) < 2 = return []
-    | otherwise = do
-        regions <- fmap sortBed $ runConduit $
-            (readBed (peakFl^.location) :: ConduitT () BED IO ()) .|
-            concatMapC (splitBedBySizeLeft 250) .| sinkList
-        readcounts <- fmap IM.toList $ forM (e^.replicates) $ \r ->
-            case r^.files of
-                Left fl -> runConduit $ readBed (fl^.location) .|
-                    rpkmSortedBed regions
-                Right fl -> runResourceT $ runConduit $
-                    sourceFile (fl^.location) .| ungzip .|
-                    linesUnboundedAsciiC .| mapC (fromLine :: _ -> BED) .|
-                    rpkmSortedBed regions
-        return $ flip map (comb readcounts) $ \((i1, r1), (i2,r2)) ->
-            let name = Pair 
-                    (printf "%s_rep%d" (T.unpack $ e^.eid) i1)
-                    (printf "%s_rep%d" (T.unpack $ e^.eid) i2)
-            in QC "signal_correlation" name (pearson $ U.zip r1 r2) Nothing
-  where
-    comb (x:xs) = zip (repeat x) xs ++ comb xs
-    comb [] = []
-
--- | Correlation of ATAC-seq signals between samples.
-atacCorrelation :: ( (ATACSeq S (File '[Gzip] 'Bed), ATACSeq S (File '[Gzip] 'Bed))
-                   , File '[] 'Bed )
-                -> IO QC
-atacCorrelation ((e1, e2), peakFl) = do
-    regions <- fmap sortBed $ runConduit $
-        (readBed (peakFl^.location) :: ConduitT () BED IO ()) .|
-        concatMapC (splitBedBySizeLeft 250) .| sinkList
-    let f1 = e1^.replicates._2.files.location
-        f2 = e2^.replicates._2.files.location
-    r1 <- runResourceT $ runConduit $
-        sourceFile f1 .| ungzip .|
-        linesUnboundedAsciiC .| mapC (fromLine :: _ -> BED) .|
-        rpkmSortedBed regions
-    r2 <- runResourceT $ runConduit $
-        sourceFile f2 .| ungzip .|
-        linesUnboundedAsciiC .| mapC (fromLine :: _ -> BED) .|
-        rpkmSortedBed regions
-    let name = Pair (T.unpack $ e1^.eid) (T.unpack $ e2^.eid)
-    return $ QC "signal_correlation" name (pearson $ U.zip r1 r2) Nothing
-
-{-
--- | Transcription Start Site (TSS) Enrichment Score
--- The TSS enrichment calculation is a signal to noise calculation.
--- The reads around a reference set of TSSs are collected to
--- form an aggregate distribution of reads centered on the TSSs
--- and extending to 1000 bp in either direction (for a total of 2000bp).
--- This distribution is then normalized by taking the average
--- read depth in the 100 bps at each of the end flanks of
--- the distribution (for a total of 200bp of averaged data) and
--- calculating a fold change at each position over that average
--- read depth. This means that the flanks should start at 1,
--- and if there is high read signal at transcription start
--- sites (highly open regions of the genome) there should be an
--- increase in signal up to a peak in the middle. We take the signal
--- value at the center of the distribution after this normalization
--- as our TSS enrichment metric. Used to evaluate ATAC-seq. 
-atacTSSEnrichment :: -> WorkflowConfig config QC
-atacTSSEnrichment = do
-    anno <- 
 -}
