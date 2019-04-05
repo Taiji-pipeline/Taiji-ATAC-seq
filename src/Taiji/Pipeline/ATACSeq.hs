@@ -88,9 +88,9 @@ builder = do
     path ["Get_Bed", "Merge_Bed", "Call_Peak"]
     ["Download_Data", "Call_Peak"] ~> "Get_Peak"
 
-    nodeP 1 "Align_QC'" 'getMappingQC $ return ()
+    nodeP 1 "Align_QC_" 'getMappingQC $ return ()
     node' "Align_QC" 'combineMappingQC $ submitToRemote .= Just False
-    path ["Align", "Align_QC'", "Align_QC"]
+    path ["Align", "Align_QC_", "Align_QC"]
 
     node' "Dup_QC" 'getDupQC $ submitToRemote .= Just False
     ["Remove_Duplicates"] ~> "Dup_QC"
