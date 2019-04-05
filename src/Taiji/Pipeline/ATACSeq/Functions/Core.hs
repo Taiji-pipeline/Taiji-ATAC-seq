@@ -16,38 +16,28 @@ module Taiji.Pipeline.ATACSeq.Functions.Core
     , atacConcatBed
     , atacCallPeak
     , atacGetNarrowPeak
-    , scAtacDeDup
     ) where
 
-import           Bio.Data.Bed                  (BED, chrom, fromLine, readBed,
-                                                sortBed, splitBedBySizeLeft)
+import           Bio.Data.Bed                  (chrom)
 import           Bio.Data.Experiment
-import Bio.HTS
 import           Bio.Pipeline.CallPeaks
 import           Bio.Pipeline.Download
 import           Bio.Pipeline.NGS.BWA
 import           Bio.Pipeline.NGS.Utils
 import           Bio.Pipeline.Utils
-import           Conduit
 import           Control.Lens
-import           Control.Monad                 (forM)
 import           Control.Monad.IO.Class        (liftIO)
 import           Control.Monad.Reader          (asks)
 import           Data.Bifunctor                (bimap)
 import           Data.Coerce                   (coerce)
-import           Data.Conduit.Zlib             (ungzip)
 import           Data.Either                   (lefts)
-import qualified Data.IntMap.Strict            as IM
 import qualified Data.Map.Strict               as M
 import           Data.Maybe                    (fromJust)
 import           Data.Monoid                   ((<>))
-import qualified Data.Vector.Unboxed as U
 import           Data.Singletons.Prelude.List   (Elem)
 import           Data.Singletons               (SingI)
 import qualified Data.Text                     as T
-import qualified Data.ByteString.Char8 as B
 import           Scientific.Workflow
-import           Statistics.Correlation        (pearson)
 import           System.IO.Temp                (withTempFile)
 import           Text.Printf                   (printf)
 
@@ -55,9 +45,9 @@ import           Taiji.Pipeline.ATACSeq.Config
 
 type ATACSeqWithSomeFile = ATACSeq N [Either SomeFile (SomeFile, SomeFile)]
 
-atacMkIndex :: ATACSeqConfig config => ([a],[a]) -> WorkflowConfig config ()
-atacMkIndex (input1, input2)
-    | null input1 && null input2 = return ()
+atacMkIndex :: ATACSeqConfig config => [a] -> WorkflowConfig config ()
+atacMkIndex input
+    | null input = return ()
     | otherwise = do
         genome <- asks (fromJust . _atacseq_genome_fasta)
         -- Generate BWA index
@@ -181,46 +171,3 @@ atacGetNarrowPeak :: [ATACSeqWithSomeFile]
 atacGetNarrowPeak input = concatMap split $ concatMap split $
     input & mapped.replicates.mapped.files %~ map fromSomeFile .
         filter (\x -> getFileType x == NarrowPeak) . lefts
-
-scAtacDeDup :: ATACSeqConfig config
-            => ATACSeq S (Either (File '[CoordinateSorted] 'Bam)
-                         (File '[CoordinateSorted, PairedEnd] 'Bam))
-            -> WorkflowConfig config (ATACSeq S (File '[] 'Bam))
-scAtacDeDup input = do
-    dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/Bam"))
-    let output = printf "%s/%s_rep%d_filt_dedup.bam" dir (T.unpack $ input^.eid)
-            (input^.replicates._1)
-        f fl = do
-            header <- getBamHeader fl
-            runResourceT $ runConduit $ streamBam fl .|
-                markDupBy getBarcode .|
-                filterC (not . isDup . flag) .| sinkBam output header
-            return $ location .~ output $ emptyFile
-    input & replicates.traverse.files %%~ liftIO . f .
-        either (^.location) (^.location)
-  where
-    getBarcode bam = Just $ head $ B.split ':' $ queryName bam
-
-
-{-
-reportQC :: ATACSeqConfig config
-         => ( [((T.Text, Int), (Int, Int))], [((T.Text, Int), Maybe Double)])
-         -> WorkflowConfig config ()
-reportQC (align, dup) = do
-    dir <- asks _atacseq_output_dir >>= getPath
-    let output = dir ++ "/QC.tsv"
-        header = ["Sample_ID", "Replicate", "Total_Reads", "Mapped_Reads"
-            , "Percent_Mapped", "Duplication_Rate"]
-        content = flip map samples $ \x -> [T.unpack $ fst x, show $ snd x] ++
-            ( case lookup x align of
-                Just (mapped', total) -> [show total, show mapped'
-                    , show $ fromIntegral mapped' / fromIntegral total]
-                Nothing -> ["NA", "NA", "NA"] ) ++
-            ( case fromMaybe Nothing (lookup x dup) of
-                Nothing -> ["NA"]
-                Just d  -> [show d] )
-    liftIO $ writeFile output $ unlines $ map (intercalate "\t") $
-        header : content
-  where
-    samples = nubSort $ map fst align ++ map fst dup
--}

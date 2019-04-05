@@ -23,9 +23,6 @@ library
   hs-source-dirs:      src
 
   exposed-modules:     Taiji.Pipeline.ATACSeq
-                       Taiji.Pipeline.ATACSeq.Bulk
-                       Taiji.Pipeline.ATACSeq.SingleCell
-                       Taiji.Pipeline.ATACSeq.Motif
                        Taiji.Pipeline.ATACSeq.Functions
                        Taiji.Pipeline.ATACSeq.Functions.Core
                        Taiji.Pipeline.ATACSeq.Functions.QC
