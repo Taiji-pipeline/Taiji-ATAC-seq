@@ -18,7 +18,7 @@ import           Data.Either                           (either)
 import qualified Data.Text                             as T
 import           Text.Printf                           (printf)
 
-import           Taiji.Pipeline.ATACSeq.Config
+import           Taiji.Pipeline.ATACSeq.Types
 import           Taiji.Pipeline.ATACSeq.Functions
 
 builder :: Builder ()
@@ -59,12 +59,11 @@ builder = do
 
     nodePS 1 "Remove_Duplicates" [| \input -> do
         dir <- asks _atacseq_output_dir >>= getPath . (<> asDir "/Bam")
-        picard <- fromJust <$> asks _atacseq_picard
         let output = printf "%s/%s_rep%d_filt_dedup.bam" dir (T.unpack $ input^.eid)
                 (input^.replicates._1)
         input & replicates.traverse.files %%~ liftIO . either
-            (fmap Left . removeDuplicates picard output)
-            (fmap Right . removeDuplicates picard output)
+            (fmap Left . removeDuplicates output)
+            (fmap Right . removeDuplicates output)
         |] $ note .= "Remove duplicated reads using picard."
 
     nodePS 1 "Bam_To_Bed" 'atacBamToBed $ do

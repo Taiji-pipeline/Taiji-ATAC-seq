@@ -33,7 +33,7 @@ import           System.IO
 import           System.IO.Temp                (emptyTempFile)
 import           Text.Printf                   (printf)
 
-import           Taiji.Pipeline.ATACSeq.Config
+import           Taiji.Pipeline.ATACSeq.Types
 
 atacMergePeaks :: ATACSeqConfig config
                => [ATACSeq S (File '[] 'NarrowPeak)]

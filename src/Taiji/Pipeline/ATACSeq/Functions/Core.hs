@@ -41,7 +41,7 @@ import           Scientific.Workflow
 import           System.IO.Temp                (withTempFile)
 import           Text.Printf                   (printf)
 
-import           Taiji.Pipeline.ATACSeq.Config
+import           Taiji.Pipeline.ATACSeq.Types
 
 type ATACSeqWithSomeFile = ATACSeq N [Either SomeFile (SomeFile, SomeFile)]
 

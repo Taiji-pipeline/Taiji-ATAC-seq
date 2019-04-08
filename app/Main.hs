@@ -14,7 +14,7 @@ import           Scientific.Workflow
 import           Scientific.Workflow.Main      (MainOpts (..), defaultMainOpts,
                                                 mainWith)
 import           Taiji.Pipeline.ATACSeq        (builder)
-import qualified Taiji.Pipeline.ATACSeq.Config as C
+import qualified Taiji.Pipeline.ATACSeq.Types
 
 data ATACSeqOpts = ATACSeqOpts
     { outputDir :: Directory
@@ -26,12 +26,11 @@ data ATACSeqOpts = ATACSeqOpts
     , genomeIndex :: Maybe FilePath
     } deriving (Generic)
 
-instance C.ATACSeqConfig ATACSeqOpts where
+instance ATACSeqConfig ATACSeqOpts where
     _atacseq_output_dir = outputDir
     _atacseq_bwa_index = bwaIndex
     _atacseq_genome_fasta = genome
     _atacseq_input = input
-    _atacseq_picard = picard
     _atacseq_callpeak_opts _ = def & mode .~ NoModel (-100) 200
     _atacseq_genome_index = genomeIndex
     _atacseq_motif_file = motifFile

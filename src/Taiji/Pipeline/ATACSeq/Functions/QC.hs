@@ -22,7 +22,7 @@ import Text.Printf (printf)
 import qualified Data.Vector.Unboxed.Mutable as UM
 
 import           Taiji.Types
-import           Taiji.Pipeline.ATACSeq.Config
+import           Taiji.Pipeline.ATACSeq.Types
 
 saveQC :: ATACSeqConfig config
          => ((QC, QC), QC, [Maybe QC])
