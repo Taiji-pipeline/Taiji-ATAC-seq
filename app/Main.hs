@@ -14,7 +14,7 @@ import           Scientific.Workflow
 import           Scientific.Workflow.Main      (MainOpts (..), defaultMainOpts,
                                                 mainWith)
 import           Taiji.Pipeline.ATACSeq        (builder)
-import qualified Taiji.Pipeline.ATACSeq.Types
+import           Taiji.Pipeline.ATACSeq.Types
 
 data ATACSeqOpts = ATACSeqOpts
     { outputDir :: Directory

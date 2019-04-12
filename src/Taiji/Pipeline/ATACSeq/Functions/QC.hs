@@ -3,8 +3,8 @@
 {-# LANGUAGE OverloadedStrings     #-}
 module Taiji.Pipeline.ATACSeq.Functions.QC where
 
-import           Bio.Data.Bed.Utils (rpkmSortedBed)
 import           Bio.Pipeline.Report
+import Data.Aeson
 import           Bio.Data.Experiment
 import qualified Data.Vector.Unboxed as U
 import Data.Maybe
@@ -12,9 +12,7 @@ import           Bio.Pipeline.Utils
 import qualified Data.Map.Strict               as M
 import           Control.Lens
 import           Control.Monad.Reader          (asks)
-import Data.Serialize (encode)
 import qualified Data.Text as T
-import qualified Data.ByteString as B
 import Conduit
 import           Scientific.Workflow
 import Bio.HTS
@@ -30,13 +28,15 @@ saveQC :: ATACSeqConfig config
 saveQC ((q1,q2), q3, q4) = do
     dir <- asks _atacseq_output_dir >>= getPath
     let output = dir ++ "/atac_seq.qc"
-    liftIO $ B.writeFile output $ encode $ [q1, q2, q3] ++ catMaybes q4
+    liftIO $ encodeFile output $ [q1, q2, q3] ++ catMaybes q4
 
 combineMappingQC :: [(String, Double, Double)] -> (QC, QC)
-combineMappingQC xs = ( QC "percent_mapped_reads" (QCVector name p) Bar
-    , QC "percent_chrM_reads" (QCVector name chrM) Bar )
+combineMappingQC xs =
+    ( QC "percent_mapped_reads" (QCResult name p) Bar
+    , QC "percent_chrM_reads" (QCResult name chrM) Bar )
   where
-    (name, p, chrM) = unzip3 xs
+    (name, p, chrM) = unzip3 $
+        map (\(a,b,c) -> (toJSON a, toJSON b, toJSON c)) xs
 
 -- | Return name, percent_mapped_reads and percent_chrM_reads.
 getMappingQC :: ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))
@@ -55,8 +55,9 @@ getMappingQC e = do
 
 getDupQC :: [ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))]
          -> QC
-getDupQC input = QC "duplication_rate" (QCVector names p) Bar
+getDupQC input = QC "duplication_rate" res Bar
   where
+    res = QCResult (map toJSON (names :: [String])) $ map toJSON (p :: [Double])
     (names, p) = unzip $ mapMaybe getDupRate input
     getDupRate e = case either getResult getResult (e^.replicates._2.files) of
         Nothing -> Nothing
@@ -150,7 +151,7 @@ getFragmentQC e = case e^.replicates._2.files of
         r <- runResourceT $ runConduit $
             streamBam (x^.location) .| fragmentSizeDistr
         return $ Just $ QC ("fragment_size_" ++ T.unpack (e^.eid))
-            (QCVector (map show [0..1000]) $ U.toList r) Density
+            (QCResult (map toJSON [0..1000::Int]) $ map toJSON $ U.toList r) Density
 
 fragmentSizeDistr :: PrimMonad m => ConduitT BAM o m (U.Vector Double)
 fragmentSizeDistr = do

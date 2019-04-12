@@ -30,6 +30,7 @@ library
                        Taiji.Pipeline.ATACSeq.Types
 
   build-depends:       base >= 4.7 && < 5
+                     , aeson
                      , bio-pipelines
                      , bytestring
                      , bio-experiments
