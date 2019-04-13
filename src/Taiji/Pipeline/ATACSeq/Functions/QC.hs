@@ -32,11 +32,11 @@ saveQC ((q1,q2), q3, q4) = do
 
 combineMappingQC :: [(String, Double, Double)] -> (QC, QC)
 combineMappingQC xs =
-    ( QC "percent_mapped_reads" (QCResult name p) Bar
-    , QC "percent_chrM_reads" (QCResult name chrM) Bar )
+    ( QC "percent_mapped_reads" $ Bar name [("", p)]
+    , QC "percent_chrM_reads" $ Bar name [("", chrM)] )
   where
     (name, p, chrM) = unzip3 $
-        map (\(a,b,c) -> (toJSON a, toJSON b, toJSON c)) xs
+        map (\(a,b,c) -> (a, b, c)) xs
 
 -- | Return name, percent_mapped_reads and percent_chrM_reads.
 getMappingQC :: ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))
@@ -55,9 +55,8 @@ getMappingQC e = do
 
 getDupQC :: [ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))]
          -> QC
-getDupQC input = QC "duplication_rate" res Bar
+getDupQC input = QC "duplication_rate" $ Bar names $ [("", p)]
   where
-    res = QCResult (map toJSON (names :: [String])) $ map toJSON (p :: [Double])
     (names, p) = unzip $ mapMaybe getDupRate input
     getDupRate e = case either getResult getResult (e^.replicates._2.files) of
         Nothing -> Nothing
@@ -150,8 +149,8 @@ getFragmentQC e = case e^.replicates._2.files of
     Right x -> do
         r <- runResourceT $ runConduit $
             streamBam (x^.location) .| fragmentSizeDistr
-        return $ Just $ QC ("fragment_size_" ++ T.unpack (e^.eid))
-            (QCResult (map toJSON [0..1000::Int]) $ map toJSON $ U.toList r) Density
+        return $ Just $ QC ("fragment_size_" ++ T.unpack (e^.eid)) $ Line
+            $ zip [0..1000] $ U.toList r
 
 fragmentSizeDistr :: PrimMonad m => ConduitT BAM o m (U.Vector Double)
 fragmentSizeDistr = do
