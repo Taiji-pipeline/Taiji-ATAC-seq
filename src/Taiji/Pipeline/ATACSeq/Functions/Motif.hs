@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PartialTypeSignatures #-}
 module Taiji.Pipeline.ATACSeq.Functions.Motif
     ( atacMergePeaks
     , atacFindMotifSiteAll
@@ -9,8 +10,8 @@ module Taiji.Pipeline.ATACSeq.Functions.Motif
 
 import           Bio.Data.Bed                  (BED, BED3, BEDLike (..),
                                                 intersectBed, mergeBed,
-                                                npPeak, readBed,
-                                                readBed', writeBed)
+                                                npPeak, streamBed,
+                                                readBed, sinkFileBed)
 import           Bio.Data.Bed.Utils  (getMotifPValue, getMotifScore, motifScan)
 import           Bio.Data.Experiment
 import           Bio.Motif                     hiding (score)
@@ -43,8 +44,9 @@ atacMergePeaks input = do
     let fls = input^..folded.replicates.folded.files
         openChromatin = dir ++ "/openChromatin.bed"
     liftIO $ do
-        peaks <- mapM (readBed' . (^.location)) fls :: IO [[BED3]]
-        runConduit $ mergeBed (concat peaks) .| writeBed openChromatin
+        peaks <- mapM (readBed . (^.location)) fls :: IO [[BED3]]
+        runResourceT $ runConduit $
+            mergeBed (concat peaks) .| sinkFileBed openChromatin
         return $ location .~ openChromatin $ emptyFile
 
 atacFindMotifSiteAll :: ATACSeqConfig config
@@ -68,9 +70,10 @@ atacFindMotifSiteAll p (ContextData openChromatin motifs) = do
     dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/TFBS/"))
     liftIO $ withGenome seqIndex $ \g -> do
         output <- emptyTempFile dir "motif_sites_part.bed"
-        runConduit $ (readBed (openChromatin^.location) :: ConduitT () BED3 IO ()) .|
+        runResourceT $ runConduit $
+            (streamBed (openChromatin^.location) :: _ _ BED3 _ _) .|
             motifScan g motifs def p .| getMotifScore g motifs def .|
-            getMotifPValue (Just (1 - p * 10)) motifs def .| writeBed output
+            getMotifPValue (Just (1 - p * 10)) motifs def .| sinkFileBed output
         return $ location .~ output $ emptyFile
 
 -- | Retrieve TFBS for each experiment
@@ -83,9 +86,11 @@ atacGetMotifSite window (ContextData tfbs e) = do
     e & replicates.traversed.files %%~ ( \fl -> liftIO $ do
         let output = printf "%s/%s_rep%d.bed" dir (T.unpack $ e^.eid)
                 (e^.replicates._1)
-        peaks <- runConduit $ readBed (fl^.location) .| mapC getSummit .| sinkList
-        runConduit $ (mapM_ (readBed . (^.location)) tfbs :: Source IO BED) .|
-            intersectBed peaks .| writeBed output
+        peaks <- runResourceT $ runConduit $
+            streamBed (fl^.location) .| mapC getSummit .| sinkList
+        runResourceT $ runConduit $
+            (mapM_ (streamBed . (^.location)) tfbs :: _ _ BED _ _) .|
+            intersectBed peaks .| sinkFileBed output
         return $ location .~ output $ emptyFile
         )
   where

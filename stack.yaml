@@ -13,12 +13,12 @@ extra-deps:
   commit:  27fbb517f6b334a48300f01aa925011fee849547
 
 - git:     https://github.com/Taiji-pipeline/bio-pipelines.git
-  commit:  36bc2f7b8170fed940cb2f0be7d29ff558c505e7
+  commit:  4e8dfffd751229259e6e3cede1483fb7fe7bf018
 
 - git:     https://github.com/Taiji-pipeline/bio-experiments.git
   commit:  4c425bf96f392fb1f9098821f643895ef1226151
 
-- bioinformatics-toolkit-0.6.0
+- bioinformatics-toolkit-0.7.0
 - HsHTSLib-1.9.2
 - drmaa-0.2.0
 - clustering-0.4.1
