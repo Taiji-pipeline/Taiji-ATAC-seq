@@ -12,13 +12,17 @@ extra-deps:
 - git:     https://github.com/Taiji-pipeline/Taiji-types.git
   commit:  27fbb517f6b334a48300f01aa925011fee849547
 
+- git:     https://github.com/kaizhang/bioinformatics-toolkit.git
+  commit:  75a8a813410a5c8267a59794c875f4d277ceb1be
+  subdirs: 
+    - bioinformatics-toolkit
+
 - git:     https://github.com/Taiji-pipeline/bio-pipelines.git
-  commit:  4e8dfffd751229259e6e3cede1483fb7fe7bf018
+  commit:  3b756e3ff0cb31c4e9ed8a1cc8d24c2ea6951af6
 
 - git:     https://github.com/Taiji-pipeline/bio-experiments.git
-  commit:  4c425bf96f392fb1f9098821f643895ef1226151
+  commit:  5fd7472babf427606058594c089abf689b7b89f4
 
-- bioinformatics-toolkit-0.7.0
 - HsHTSLib-1.9.2
 - drmaa-0.2.0
 - clustering-0.4.1

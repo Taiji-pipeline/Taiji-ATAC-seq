@@ -34,7 +34,7 @@ library
                      , bio-pipelines
                      , bytestring
                      , bio-experiments
-                     , bioinformatics-toolkit >= 0.7.0
+                     , bioinformatics-toolkit >= 0.8.0
                      , conduit-extra
                      , containers
                      , conduit

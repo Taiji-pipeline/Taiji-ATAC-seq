@@ -12,7 +12,7 @@ import           Bio.Data.Bed                  (BED, BED3, BEDLike (..),
                                                 intersectBed, mergeBed,
                                                 npPeak, streamBed,
                                                 readBed, sinkFileBed)
-import           Bio.Data.Bed.Utils  (getMotifPValue, getMotifScore, motifScan)
+import           Bio.Data.Bed.Utils  (scanMotif, mkCutoffMotif)
 import           Bio.Data.Experiment
 import           Bio.Motif                     hiding (score)
 import           Bio.Pipeline.Instances        ()
@@ -70,10 +70,10 @@ atacFindMotifSiteAll p (ContextData openChromatin motifs) = do
     dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/TFBS/"))
     liftIO $ withGenome seqIndex $ \g -> do
         output <- emptyTempFile dir "motif_sites_part.bed"
+        let motifs' = map (mkCutoffMotif def p) motifs
         runResourceT $ runConduit $
             (streamBed (openChromatin^.location) :: _ _ BED3 _ _) .|
-            motifScan g motifs def p .| getMotifScore g motifs def .|
-            getMotifPValue (Just (1 - p * 10)) motifs def .| sinkFileBed output
+            scanMotif g motifs' .| sinkFileBed output
         return $ location .~ output $ emptyFile
 
 -- | Retrieve TFBS for each experiment
