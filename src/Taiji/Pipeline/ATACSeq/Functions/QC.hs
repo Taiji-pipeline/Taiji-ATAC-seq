@@ -26,10 +26,12 @@ saveQC :: ATACSeqConfig config
          => (Maybe VLSpec, [Maybe VLSpec], Maybe (VLSpec, VLSpec))
          -> WorkflowConfig config ()
 saveQC (Nothing, [], Nothing) = return ()
-saveQC (q1, q2, (q3,q4)) = do
+saveQC (x, y, z) = do
     dir <- asks _atacseq_output_dir >>= getPath
     let output = dir ++ "/atac_seq_qc.html"
-    liftIO $ savePlots output (q1:q3:q4:catMaybes q2) []
+        plts = maybe [] return x ++ catMaybes y ++
+            maybe [] (\(a,b) -> [a,b]) z
+    liftIO $ savePlots output plts []
 
 combineMappingQC :: [(String, Double, Double)] -> Maybe (VLSpec, VLSpec)
 combineMappingQC xs
