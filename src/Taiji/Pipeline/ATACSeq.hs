@@ -94,7 +94,7 @@ builder = do
     node' "Dup_QC" 'getDupQC $ submitToRemote .= Just False
     ["Remove_Duplicates"] ~> "Dup_QC"
 
-    nodeP 1 "Fragment_Size_QC" 'getFragmentQC $ return ()
+    nodeP 1 "Fragment_Size_QC" 'plotFragmentQC $ return ()
     ["Remove_Duplicates"] ~> "Fragment_Size_QC"
 
     {-
@@ -120,7 +120,7 @@ builder = do
     -}
 
     nodeS "Report_QC" 'saveQC $ submitToRemote .= Just False
-    ["Align_QC", "Dup_QC", "Fragment_Size_QC"] ~> "Report_QC"
+    ["Dup_QC", "Fragment_Size_QC", "Align_QC"] ~> "Report_QC"
 
 
     nodeS "Merge_Peaks" 'atacMergePeaks $ do

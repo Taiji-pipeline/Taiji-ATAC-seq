@@ -4,7 +4,6 @@
 module Taiji.Pipeline.ATACSeq.Functions.QC where
 
 import           Bio.Pipeline.Report
-import Data.Aeson
 import           Bio.Data.Experiment
 import qualified Data.Vector.Unboxed as U
 import Data.Maybe
@@ -17,26 +16,30 @@ import Conduit
 import           Scientific.Workflow
 import Bio.HTS
 import Text.Printf (printf)
-import qualified Data.Vector.Unboxed.Mutable as UM
+import Graphics.Vega.VegaLite hiding (lookup)
 
-import           Taiji.Types
 import           Taiji.Pipeline.ATACSeq.Types
+import           Taiji.Utils.Plot
+import           Taiji.Types ()
 
 saveQC :: ATACSeqConfig config
-         => ((QC, QC), QC, [Maybe QC])
+         => (Maybe VLSpec, [Maybe VLSpec], Maybe (VLSpec, VLSpec))
          -> WorkflowConfig config ()
-saveQC ((q1,q2), q3, q4) = do
+saveQC (Nothing, [], Nothing) = return ()
+saveQC (q1, q2, (q3,q4)) = do
     dir <- asks _atacseq_output_dir >>= getPath
-    let output = dir ++ "/atac_seq.qc"
-    liftIO $ encodeFile output $ [q1, q2, q3] ++ catMaybes q4
+    let output = dir ++ "/atac_seq_qc.html"
+    liftIO $ savePlots output (q1:q3:q4:catMaybes q2) []
 
-combineMappingQC :: [(String, Double, Double)] -> (QC, QC)
-combineMappingQC xs =
-    ( QC "percent_mapped_reads" $ Bar name [("", p)]
-    , QC "percent_chrM_reads" $ Bar name [("", chrM)] )
+combineMappingQC :: [(String, Double, Double)] -> Maybe (VLSpec, VLSpec)
+combineMappingQC xs
+    | null xs = Nothing
+    | otherwise = Just
+        ( vegaBar "percent mapped reads" "sample" "%Reads" $ zip name p
+        , vegaBar "percent chrM reads" "sample" "%Reads" $ zip name chrM )
   where
     (name, p, chrM) = unzip3 $
-        map (\(a,b,c) -> (a, b, c)) xs
+        map (\(a,b,c) -> (T.pack a, 100*b, 100*c)) xs
 
 -- | Return name, percent_mapped_reads and percent_chrM_reads.
 getMappingQC :: ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))
@@ -54,20 +57,22 @@ getMappingQC e = do
     name = printf "%s_rep%d" (T.unpack $ e^.eid) (e^.replicates._1)
 
 getDupQC :: [ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))]
-         -> QC
-getDupQC input = QC "duplication_rate" $ Bar names $ [("", p)]
+         -> Maybe VLSpec
+getDupQC input
+    | null input = Nothing
+    | otherwise = Just $ vegaBar "duplication rate" "sample" "% reads" $
+        mapMaybe getDupRate input
   where
-    (names, p) = unzip $ mapMaybe getDupRate input
     getDupRate e = case either getResult getResult (e^.replicates._2.files) of
         Nothing -> Nothing
         Just r ->  Just
-            (printf "%s_rep%d" (T.unpack $ e^.eid) (e^.replicates._1), r)
+            (T.pack $ printf "%s_rep%d" (T.unpack $ e^.eid) (e^.replicates._1), r)
     getResult fl = case M.lookup "QC" (fl^.info) of
         Nothing -> Nothing
         Just txt -> let xs = T.lines txt
                         dup = read $ T.unpack $ last $ T.words $ last xs
                         total = read $ T.unpack $ (T.words $ head xs) !! 1
-                    in Just $ dup / total
+                    in Just $ 100 * dup / total
 
 {-
 getPeakQC :: (Elem 'Gzip tags1 ~ 'False, Elem 'Gzip tags2 ~ 'True)
@@ -142,26 +147,29 @@ atacTSSEnrichment = do
     anno <- 
 -}
 
-getFragmentQC :: ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))
-              -> IO (Maybe QC)
-getFragmentQC e = case e^.replicates._2.files of
-    Left _ -> return Nothing  
-    Right x -> do
+plotFragmentQC :: ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))
+               -> IO (Maybe VLSpec)
+plotFragmentQC input = case input^.replicates._2.files of
+    Left _ -> return Nothing
+    Right fl -> do
         r <- runResourceT $ runConduit $
-            streamBam (x^.location) .| fragmentSizeDistr
-        return $ Just $ QC ("fragment_size_" ++ T.unpack (e^.eid)) $ Line
-            $ zip [0..1000] $ U.toList r
-
-fragmentSizeDistr :: PrimMonad m => ConduitT BAM o m (U.Vector Double)
-fragmentSizeDistr = do
-    vec <- lift $ UM.replicate n 0
-    mapM_C $ f vec
-    vec' <- lift $ U.unsafeFreeze vec
-    return $ U.map (/ (U.sum vec')) vec'
+            streamBam (fl^.location) .| fragmentSizeDistr 1001
+        let (xs, ys) = unzip $ zip [0..] $ U.toList r
+        return $ Just $ plt xs ys
   where
-    f v x | s >= n = return ()
-          | otherwise = UM.modify v (+1) s
+    plt xs ys = fromVL $ toVegaLite
+        [ title $ T.pack $ printf "fragment_size_%s_rep%d"
+            (T.unpack $ input^.eid) (input^.replicates._1)
+        , background "white"
+        , dat
+        , mark Line []
+        , width 600
+        , height 300
+        , enc ]
       where
-        s = abs $ tLen x
-    n = 1001
-{-# INLINE fragmentSizeDistr #-}
+        dat = dataFromColumns [] $
+            dataColumn "fragment size" (Numbers xs) $
+            dataColumn "normalized count" (Numbers ys) []
+        enc = encoding $
+            position X [PName "fragment size", PmType Quantitative, PAxis [AxTitle "Fragment size"]] $
+            position Y [PName "normalized count", PmType Quantitative] []

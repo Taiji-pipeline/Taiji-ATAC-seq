@@ -23,7 +23,7 @@ import           Control.Lens
 import           Control.Monad.IO.Class        (liftIO)
 import           Control.Monad.Reader          (asks)
 import           Data.Default
-import           Data.Maybe                    (fromJust, fromMaybe)
+import           Data.Maybe                    (catMaybes, fromJust, fromMaybe)
 import           Data.Monoid                   ((<>))
 import qualified Data.Text                     as T
 import           Scientific.Workflow
@@ -38,22 +38,25 @@ import           Taiji.Pipeline.ATACSeq.Types
 
 atacMergePeaks :: ATACSeqConfig config
                => [ATACSeq S (File '[] 'NarrowPeak)]
-               -> WorkflowConfig config (File '[] 'Bed)
-atacMergePeaks input = do
-    dir <- asks _atacseq_output_dir >>= getPath
-    let fls = input^..folded.replicates.folded.files
-        openChromatin = dir ++ "/openChromatin.bed"
-    liftIO $ do
-        peaks <- mapM (readBed . (^.location)) fls :: IO [[BED3]]
-        runResourceT $ runConduit $
-            mergeBed (concat peaks) .| sinkFileBed openChromatin
-        return $ location .~ openChromatin $ emptyFile
+               -> WorkflowConfig config (Maybe (File '[] 'Bed))
+atacMergePeaks input
+    | null input = return Nothing
+    | otherwise = do
+        dir <- asks _atacseq_output_dir >>= getPath
+        let fls = input^..folded.replicates.folded.files
+            openChromatin = dir ++ "/openChromatin.bed"
+        liftIO $ do
+            peaks <- mapM (readBed . (^.location)) fls :: IO [[BED3]]
+            runResourceT $ runConduit $
+                mergeBed (concat peaks) .| sinkFileBed openChromatin
+            return $ Just $ location .~ openChromatin $ emptyFile
 
 atacFindMotifSiteAll :: ATACSeqConfig config
                      => Double     -- ^ p value
-                     -> ContextData (File '[] 'Bed) [Motif]
-                     -> WorkflowConfig config (File '[] 'Bed)
-atacFindMotifSiteAll p (ContextData openChromatin motifs) = do
+                     -> ContextData (Maybe (File '[] 'Bed)) [Motif]
+                     -> WorkflowConfig config (Maybe (File '[] 'Bed))
+atacFindMotifSiteAll _ (ContextData Nothing _) = return Nothing
+atacFindMotifSiteAll p (ContextData (Just openChromatin) motifs) = do
     -- Generate sequence index
     genome <- asks ( fromMaybe (error "Genome fasta file was not specified!") .
         _atacseq_genome_fasta )
@@ -74,12 +77,12 @@ atacFindMotifSiteAll p (ContextData openChromatin motifs) = do
         runResourceT $ runConduit $
             (streamBed (openChromatin^.location) :: _ _ BED3 _ _) .|
             scanMotif g motifs' .| sinkFileBed output
-        return $ location .~ output $ emptyFile
+        return $ Just $ location .~ output $ emptyFile
 
 -- | Retrieve TFBS for each experiment
 atacGetMotifSite :: ATACSeqConfig config
                  => Int -- ^ region around summit
-                 -> ContextData [File '[] 'Bed] (ATACSeq S (File '[] 'NarrowPeak))
+                 -> ContextData [Maybe (File '[] 'Bed)] (ATACSeq S (File '[] 'NarrowPeak))
                  -> WorkflowConfig config (ATACSeq S (File '[] 'Bed))
 atacGetMotifSite window (ContextData tfbs e) = do
     dir <- asks ((<> "/TFBS") . _atacseq_output_dir) >>= getPath
@@ -89,7 +92,7 @@ atacGetMotifSite window (ContextData tfbs e) = do
         peaks <- runResourceT $ runConduit $
             streamBed (fl^.location) .| mapC getSummit .| sinkList
         runResourceT $ runConduit $
-            (mapM_ (streamBed . (^.location)) tfbs :: _ _ BED _ _) .|
+            (mapM_ (streamBed . (^.location)) $ catMaybes tfbs :: _ _ BED _ _) .|
             intersectBed peaks .| sinkFileBed output
         return $ location .~ output $ emptyFile
         )

@@ -20,11 +20,7 @@ module Taiji.Pipeline.ATACSeq.Functions.Core
 
 import           Bio.Data.Bed                  (chrom)
 import           Bio.Data.Experiment
-import           Bio.Pipeline.CallPeaks
-import           Bio.Pipeline.Download
-import           Bio.Pipeline.NGS.BWA
-import           Bio.Pipeline.NGS.Utils
-import           Bio.Pipeline.Utils
+import           Bio.Pipeline
 import           Control.Lens
 import           Control.Monad.IO.Class        (liftIO)
 import           Control.Monad.Reader          (asks)
@@ -58,9 +54,10 @@ atacMkIndex input
 atacDownloadData :: ATACSeqConfig config
                  => [ATACSeqWithSomeFile]
                  -> WorkflowConfig config [ATACSeqWithSomeFile]
-atacDownloadData dat = do
-    dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/Download"))
-    liftIO $ dat & traverse.replicates.traverse.files.traverse %%~ downloadFiles dir
+atacDownloadData dat = dat & traverse.replicates.traverse.files.traverse %%~
+    (\fl -> do
+        dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/Download"))
+        liftIO $ downloadFiles dir fl )
 
 atacGetFastq :: [ATACSeqWithSomeFile]
              -> [ ATACSeq S ( Either

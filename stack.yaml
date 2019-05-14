@@ -1,4 +1,4 @@
-resolver: nightly-2019-03-14
+resolver: nightly-2019-05-11
 
 flags:
   Taiji-ATAC-seq:
@@ -9,8 +9,8 @@ packages:
 
 extra-deps:
 
-- git:     https://github.com/Taiji-pipeline/Taiji-types.git
-  commit:  27fbb517f6b334a48300f01aa925011fee849547
+- git:     https://github.com/Taiji-pipeline/Taiji-utils.git
+  commit:  af37677ff940cd2b50090e7921b0bf8365e45fda
 
 - git:     https://github.com/kaizhang/bioinformatics-toolkit.git
   commit:  75a8a813410a5c8267a59794c875f4d277ceb1be
@@ -23,7 +23,9 @@ extra-deps:
 - git:     https://github.com/Taiji-pipeline/bio-experiments.git
   commit:  5fd7472babf427606058594c089abf689b7b89f4
 
-- HsHTSLib-1.9.2
+- git:     https://github.com/kaizhang/HsHTSLib.git
+  commit:  c116cfa29e33d3142a6cb502f1dc4c02066d0aa9
+
 - drmaa-0.2.0
 - clustering-0.4.1
 - SciFlow-0.6.2
