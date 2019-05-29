@@ -13,7 +13,7 @@ import           Control.Monad.IO.Class                 (liftIO)
 import           Control.Monad.Reader                   (asks)
 import           Data.List.Split                        (chunksOf)
 import           Data.Maybe                             
-import           Scientific.Workflow
+import           Control.Workflow
 import           Data.Either                           (either)
 import qualified Data.Text                             as T
 import           Text.Printf                           (printf)
@@ -23,78 +23,73 @@ import           Taiji.Pipeline.ATACSeq.Functions
 
 builder :: Builder ()
 builder = do
-    nodeS "Read_Input" [| \_ -> do
+    node "Read_Input" [| \_ -> do
         input <- asks _atacseq_input
         liftIO $ if ".tsv" == reverse (take 4 $ reverse input)
             then readATACSeqTSV input "ATAC-seq"
             else readATACSeq input "ATAC-seq"
-        |] $ do
-            submitToRemote .= Just False
-            note .= "Read ATAC-seq data information from input file."
-    nodeS "Download_Data" 'atacDownloadData $ do
-        submitToRemote .= Just False
-        note .= "Download data."
-    node' "Get_Fastq" 'atacGetFastq $ submitToRemote .= Just False
+        |] $ doc .= "Read ATAC-seq data information from input file."
+    node "Download_Data" 'atacDownloadData $ doc .= "Download data."
+    node "Get_Fastq" [| return . atacGetFastq |] $ return ()
 
     path ["Read_Input", "Download_Data", "Get_Fastq"]
 
-    nodeS "Make_Index" 'atacMkIndex $ note .= "Generate the BWA index."
-    node' "Align_Prep" [| fst |] $ submitToRemote .= Just False
-    nodePS 1 "Align" 'atacAlign $ do
-        remoteParam .= "--ntasks-per-node=2"  -- slurm
-        --remoteParam .= "-pe smp 2"  -- sge
-        note .= "Read alignment using BWA. The default parameters are: " <>
+    node "Make_Index" 'atacMkIndex $ doc .= "Generate the BWA index."
+    node "Align_Prep" [| return . fst |] $ return ()
+    nodePar "Align" 'atacAlign $ do
+        nCore .= 2
+        doc .= "Read alignment using BWA. The default parameters are: " <>
             "bwa mem -M -k 32."
 
     ["Get_Fastq"] ~> "Make_Index"
     ["Get_Fastq", "Make_Index"] ~> "Align_Prep"
     ["Align_Prep"] ~> "Align"
 
-    node' "Get_Bam" [| \(x,y) -> atacGetBam x ++ y |] $ submitToRemote .= Just False
+    node "Get_Bam" [| \(x,y) -> return $ atacGetBam x ++ y |] $ return ()
 
     ["Download_Data", "Align"] ~> "Get_Bam"
 
-    nodePS 1 "Filter_Bam" 'atacFilterBamSort $ do
-        note .= "Remove low quality tags using: samtools -F 0x70c -q 30"
+    nodePar "Filter_Bam" 'atacFilterBamSort $ do
+        doc .= "Remove low quality tags using: samtools -F 0x70c -q 30"
 
-    nodePS 1 "Remove_Duplicates" [| \input -> do
+    nodePar "Remove_Duplicates" [| \input -> do
         dir <- asks _atacseq_output_dir >>= getPath . (<> asDir "/Bam")
         let output = printf "%s/%s_rep%d_filt_dedup.bam" dir (T.unpack $ input^.eid)
                 (input^.replicates._1)
         input & replicates.traverse.files %%~ liftIO . either
             (fmap Left . removeDuplicates output)
             (fmap Right . removeDuplicates output)
-        |] $ note .= "Remove duplicated reads using picard."
+        |] $ doc .= "Remove duplicated reads using picard."
 
-    nodePS 1 "Bam_To_Bed" 'atacBamToBed $ do
-        note .= "Convert Bam file to Bed file."
+    nodePar "Bam_To_Bed" 'atacBamToBed $ do
+        doc .= "Convert Bam file to Bed file."
 
-    node' "Get_Bed" [| \(input1, input2) ->
+    node "Get_Bed" [| \(input1, input2) ->
         let f [x] = x
             f _   = error "Must contain exactly 1 file"
-        in mapped.replicates.mapped.files %~ f $ mergeExp $ atacGetBed input1 ++
+        in return $ mapped.replicates.mapped.files %~ f $ mergeExp $ atacGetBed input1 ++
             (input2 & mapped.replicates.mapped.files %~ Right)
-        |] $ submitToRemote .= Just False
+        |] $ return ()
 
-    nodePS 1 "Merge_Bed" 'atacConcatBed $ return ()
-    nodePS 1 "Call_Peak" 'atacCallPeak $ return ()
+    nodePar "Merge_Bed" 'atacConcatBed $ return ()
+    nodePar "Call_Peak" 'atacCallPeak $ return ()
 
-    node' "Get_Peak" [| \(input1, input2) -> atacGetNarrowPeak input1 ++ input2 
-        |] $ submitToRemote .= Just False
+    node "Get_Peak" [| \(input1, input2) -> return $ atacGetNarrowPeak input1 ++ input2 
+        |] $ return ()
 
     path ["Get_Bam", "Filter_Bam", "Remove_Duplicates", "Bam_To_Bed"]
     ["Download_Data", "Bam_To_Bed"] ~> "Get_Bed"
     path ["Get_Bed", "Merge_Bed", "Call_Peak"]
     ["Download_Data", "Call_Peak"] ~> "Get_Peak"
 
-    nodeP 1 "Align_QC_" 'getMappingQC $ return ()
-    node' "Align_QC" 'combineMappingQC $ submitToRemote .= Just False
+    nodePar "Align_QC_" [| liftIO . getMappingQC |] $ return ()
+    node "Align_QC" [| return . combineMappingQC |] $ return ()
     path ["Align", "Align_QC_", "Align_QC"]
 
-    node' "Dup_QC" 'getDupQC $ submitToRemote .= Just False
+    node "Dup_QC" [| return . getDupQC |] $ return ()
     ["Remove_Duplicates"] ~> "Dup_QC"
 
-    nodeP 1 "Fragment_Size_QC" 'plotFragmentQC $ return ()
+    nodePar "Fragment_Size_QC" [| liftIO . plotFragmentQC |] $ return ()
     ["Remove_Duplicates"] ~> "Fragment_Size_QC"
 
     {-
@@ -119,31 +114,28 @@ builder = do
     path ["Correlation_Prep", "Correlation"]
     -}
 
-    nodeS "Report_QC" 'saveQC $ submitToRemote .= Just False
+    node "Report_QC" 'saveQC $ return ()
     ["Dup_QC", "Fragment_Size_QC", "Align_QC"] ~> "Report_QC"
 
 
-    nodeS "Merge_Peaks" 'atacMergePeaks $ do
-        note .= "Merge peaks called from different samples together to form " <>
+    node "Merge_Peaks" 'atacMergePeaks $ do
+        doc .= "Merge peaks called from different samples together to form " <>
             "a non-overlapping set of open chromatin regions."
-    nodeS "Find_TFBS_Prep" [| \region -> do
+    node "Find_TFBS_Prep" [| \region -> do
         motifFile <- fromMaybe (error "Motif file is not specified!") <$>
             asks _atacseq_motif_file
         motifs <- liftIO $ readMEME motifFile
-        return $ ContextData region $ chunksOf 100 motifs
-        |] $ do
-            submitToRemote .= Just False
-            note .= "Prepare for parallel execution."
-    nodeSharedPS 1 "Find_TFBS_Union" [| \x -> atacFindMotifSiteAll 1e-4 x |] $ do
-        note .= "Identify TF binding sites in open chromatin regions using " <>
+        return $ zip (repeat region) $ chunksOf 100 motifs
+        |] $ doc .= "Prepare for parallel execution."
+    nodePar "Find_TFBS_Union" [| \x -> atacFindMotifSiteAll 5e-5 x |] $ do
+        doc .= "Identify TF binding sites in open chromatin regions using " <>
             "the FIMO's motif scanning algorithm. " <>
             "Use 1e-5 as the default p-value cutoff."
 
-    node' "Get_TFBS_Prep" [| uncurry ContextData |] $ do
-        submitToRemote .= Just False
+    node "Get_TFBS_Prep" [| \(x,y) -> return $ zip (repeat x) y|] $ return ()
 
-    nodeSharedPS 1 "Get_TFBS" [| atacGetMotifSite 50 |] $ do
-        note .= "Retrieve motif binding sites for each sample."
+    nodePar "Get_TFBS" [| atacGetMotifSite 50 |] $ do
+        doc .= "Retrieve motif binding sites for each sample."
     path ["Get_Peak", "Merge_Peaks", "Find_TFBS_Prep", "Find_TFBS_Union"]
     ["Find_TFBS_Union", "Get_Peak"] ~> "Get_TFBS_Prep"
     ["Get_TFBS_Prep"] ~> "Get_TFBS"

@@ -46,7 +46,7 @@ library
                      , HsHTSLib >= 1.9.2.1
                      , lens
                      , mtl
-                     , SciFlow >= 0.6.2
+                     , SciFlow >= 0.7.1
                      , text
                      , temporary
                      , transformers-base
@@ -72,8 +72,11 @@ executable taiji-atac-seq
                      , aeson
                      , data-default
                      , bio-pipelines
+                     , binary
                      , lens
-                     , SciFlow >=0.6.2
+                     , SciFlow >=0.7.1
+                     , SciFlow-drmaa 
+                     , SciFlow-app
                      , Taiji-ATAC-seq
 
   default-language:    Haskell2010

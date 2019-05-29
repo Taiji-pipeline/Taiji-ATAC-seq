@@ -23,7 +23,7 @@ import           Bio.Data.Experiment
 import           Bio.Pipeline
 import           Control.Lens
 import           Control.Monad.IO.Class        (liftIO)
-import           Control.Monad.Reader          (asks)
+import           Control.Monad.Reader          (ReaderT, asks)
 import           Data.Bifunctor                (bimap)
 import           Data.Coerce                   (coerce)
 import           Data.Either                   (lefts)
@@ -33,7 +33,6 @@ import           Data.Monoid                   ((<>))
 import           Data.Singletons.Prelude.List   (Elem)
 import           Data.Singletons               (SingI)
 import qualified Data.Text                     as T
-import           Scientific.Workflow
 import           System.IO.Temp                (withTempFile)
 import           Text.Printf                   (printf)
 
@@ -41,7 +40,7 @@ import           Taiji.Pipeline.ATACSeq.Types
 
 type ATACSeqWithSomeFile = ATACSeq N [Either SomeFile (SomeFile, SomeFile)]
 
-atacMkIndex :: ATACSeqConfig config => [a] -> WorkflowConfig config ()
+atacMkIndex :: ATACSeqConfig config => [a] -> ReaderT config IO ()
 atacMkIndex input
     | null input = return ()
     | otherwise = do
@@ -53,7 +52,7 @@ atacMkIndex input
 
 atacDownloadData :: ATACSeqConfig config
                  => [ATACSeqWithSomeFile]
-                 -> WorkflowConfig config [ATACSeqWithSomeFile]
+                 -> ReaderT config IO [ATACSeqWithSomeFile]
 atacDownloadData dat = dat & traverse.replicates.traverse.files.traverse %%~
     (\fl -> do
         dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/Download"))
@@ -73,7 +72,7 @@ atacGetFastq inputs = concatMap split $ concatMap split $
 atacAlign :: ATACSeqConfig config
           => ATACSeq S ( Either
                 (SomeTags 'Fastq) (SomeTags 'Fastq, SomeTags 'Fastq) )
-          -> WorkflowConfig config ( ATACSeq S
+          -> ReaderT config IO ( ATACSeq S
                 (Either (File '[] 'Bam) (File '[PairedEnd] 'Bam)) )
 atacAlign input = do
     dir <- asks ((<> "/Bam") . _atacseq_output_dir) >>= getPath
@@ -104,7 +103,7 @@ atacGetBam inputs = concatMap split $ concatMap split $
 
 atacFilterBamSort :: ATACSeqConfig config
     => ATACSeq S (Either (File '[] 'Bam) (File '[PairedEnd] 'Bam))
-    -> WorkflowConfig config ( ATACSeq S
+    -> ReaderT config IO ( ATACSeq S
         (Either (File '[CoordinateSorted] 'Bam) (File '[CoordinateSorted, PairedEnd] 'Bam)) )
 atacFilterBamSort input = do
     dir <- asks ((<> "/Bam") . _atacseq_output_dir) >>= getPath
@@ -129,7 +128,7 @@ atacGetBed input = concatMap split $ concatMap split $
 
 atacBamToBed :: ATACSeqConfig config
              => ATACSeq S ( Either (File tags1 'Bam) (File tags2 'Bam) )
-             -> WorkflowConfig config (ATACSeq S (File '[Gzip] 'Bed))
+             -> ReaderT config IO (ATACSeq S (File '[Gzip] 'Bed))
 atacBamToBed input = do
     dir <- asks ((<> "/Bed") . _atacseq_output_dir) >>= getPath
     let output = printf "%s/%s_rep%d.bed.gz" dir (T.unpack $ input^.eid)
@@ -142,7 +141,7 @@ atacConcatBed :: ( ATACSeqConfig config
                  , Elem 'Gzip tags1 ~ 'False
                  , Elem 'Gzip tags2 ~ 'True )
               => ATACSeq N (Either (File tags1 'Bed) (File tags2 'Bed))
-              -> WorkflowConfig config (ATACSeq S (File '[Gzip] 'Bed))
+              -> ReaderT config IO (ATACSeq S (File '[Gzip] 'Bed))
 atacConcatBed input = do
     dir <- asks ((<> "/Bed") . _atacseq_output_dir) >>= getPath
     let output = printf "%s/%s_rep0_merged.bed.gz" dir (T.unpack $ input^.eid)
@@ -153,7 +152,7 @@ atacConcatBed input = do
 
 atacCallPeak :: (ATACSeqConfig config, SingI tags)
              => ATACSeq S (File tags 'Bed)
-             -> WorkflowConfig config (ATACSeq S (File '[] 'NarrowPeak))
+             -> ReaderT config IO (ATACSeq S (File '[] 'NarrowPeak))
 atacCallPeak input = do
     dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/Peaks"))
     opts <- asks _atacseq_callpeak_opts

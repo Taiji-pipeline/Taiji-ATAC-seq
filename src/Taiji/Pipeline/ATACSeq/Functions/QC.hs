@@ -10,10 +10,9 @@ import Data.Maybe
 import           Bio.Pipeline.Utils
 import qualified Data.Map.Strict               as M
 import           Control.Lens
-import           Control.Monad.Reader          (asks)
+import           Control.Monad.Reader          (ReaderT, asks)
 import qualified Data.Text as T
 import Conduit
-import           Scientific.Workflow
 import Bio.HTS
 import Text.Printf (printf)
 import Graphics.Vega.VegaLite hiding (lookup)
@@ -24,7 +23,7 @@ import           Taiji.Types ()
 
 saveQC :: ATACSeqConfig config
          => (Maybe VLSpec, [Maybe VLSpec], Maybe (VLSpec, VLSpec))
-         -> WorkflowConfig config ()
+         -> ReaderT config IO ()
 saveQC (Nothing, [], Nothing) = return ()
 saveQC (x, y, z) = do
     dir <- asks _atacseq_output_dir >>= getPath

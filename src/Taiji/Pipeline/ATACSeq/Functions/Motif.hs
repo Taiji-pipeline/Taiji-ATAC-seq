@@ -21,12 +21,11 @@ import           Bio.Seq.IO
 import           Conduit
 import           Control.Lens
 import           Control.Monad.IO.Class        (liftIO)
-import           Control.Monad.Reader          (asks)
+import           Control.Monad.Reader          (ReaderT, asks)
 import           Data.Default
 import           Data.Maybe                    (catMaybes, fromJust, fromMaybe)
 import           Data.Monoid                   ((<>))
 import qualified Data.Text                     as T
-import           Scientific.Workflow
 import           Shelly                        (fromText, mkdir_p, shelly,
                                                 test_f)
 import           System.FilePath               (takeDirectory)
@@ -38,7 +37,7 @@ import           Taiji.Pipeline.ATACSeq.Types
 
 atacMergePeaks :: ATACSeqConfig config
                => [ATACSeq S (File '[] 'NarrowPeak)]
-               -> WorkflowConfig config (Maybe (File '[] 'Bed))
+               -> ReaderT config IO (Maybe (File '[] 'Bed))
 atacMergePeaks input
     | null input = return Nothing
     | otherwise = do
@@ -53,10 +52,10 @@ atacMergePeaks input
 
 atacFindMotifSiteAll :: ATACSeqConfig config
                      => Double     -- ^ p value
-                     -> ContextData (Maybe (File '[] 'Bed)) [Motif]
-                     -> WorkflowConfig config (Maybe (File '[] 'Bed))
-atacFindMotifSiteAll _ (ContextData Nothing _) = return Nothing
-atacFindMotifSiteAll p (ContextData (Just openChromatin) motifs) = do
+                     -> (Maybe (File '[] 'Bed), [Motif])
+                     -> ReaderT config IO (Maybe (File '[] 'Bed))
+atacFindMotifSiteAll _ (Nothing, _) = return Nothing
+atacFindMotifSiteAll p (Just openChromatin, motifs) = do
     -- Generate sequence index
     genome <- asks ( fromMaybe (error "Genome fasta file was not specified!") .
         _atacseq_genome_fasta )
@@ -82,9 +81,9 @@ atacFindMotifSiteAll p (ContextData (Just openChromatin) motifs) = do
 -- | Retrieve TFBS for each experiment
 atacGetMotifSite :: ATACSeqConfig config
                  => Int -- ^ region around summit
-                 -> ContextData [Maybe (File '[] 'Bed)] (ATACSeq S (File '[] 'NarrowPeak))
-                 -> WorkflowConfig config (ATACSeq S (File '[] 'Bed))
-atacGetMotifSite window (ContextData tfbs e) = do
+                 -> ([Maybe (File '[] 'Bed)], ATACSeq S (File '[] 'NarrowPeak))
+                 -> ReaderT config IO (ATACSeq S (File '[] 'Bed))
+atacGetMotifSite window (tfbs, e) = do
     dir <- asks ((<> "/TFBS") . _atacseq_output_dir) >>= getPath
     e & replicates.traversed.files %%~ ( \fl -> liftIO $ do
         let output = printf "%s/%s_rep%d.bed" dir (T.unpack $ e^.eid)
