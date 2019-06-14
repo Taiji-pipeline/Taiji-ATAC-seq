@@ -24,6 +24,7 @@ library
 
   exposed-modules:     Taiji.Pipeline.ATACSeq
                        Taiji.Pipeline.ATACSeq.Functions
+                       Taiji.Pipeline.ATACSeq.Functions.GeneQuant
                        Taiji.Pipeline.ATACSeq.Functions.Core
                        Taiji.Pipeline.ATACSeq.Functions.QC
                        Taiji.Pipeline.ATACSeq.Functions.Motif
@@ -35,12 +36,14 @@ library
                      , bytestring
                      , bio-experiments
                      , bioinformatics-toolkit >= 0.8.0
+                     , case-insensitive
                      , conduit-extra
                      , containers
                      , conduit
                      , cereal
                      , data-default
                      , data-ordlist
+                     , double-conversion
                      , filepath
                      , hvega
                      , HsHTSLib >= 1.9.2.1
@@ -55,6 +58,7 @@ library
                      , shelly
                      , statistics >= 0.15.0.0
                      , vector
+                     , unordered-containers
                      , Taiji-utils
   default-language:    Haskell2010
 

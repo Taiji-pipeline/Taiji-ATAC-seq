@@ -11,3 +11,4 @@ class ATACSeqConfig config where
     _atacseq_genome_index :: config -> Maybe FilePath
     _atacseq_motif_file :: config -> Maybe FilePath
     _atacseq_callpeak_opts :: config -> CallPeakOpts
+    _atacseq_annotation :: config -> Maybe FilePath

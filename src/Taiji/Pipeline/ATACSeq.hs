@@ -70,17 +70,19 @@ builder = do
         in return $ mapped.replicates.mapped.files %~ f $ mergeExp $ atacGetBed input1 ++
             (input2 & mapped.replicates.mapped.files %~ Right)
         |] $ return ()
+    path ["Get_Bam", "Filter_Bam", "Remove_Duplicates", "Bam_To_Bed"]
+    ["Download_Data", "Bam_To_Bed"] ~> "Get_Bed"
 
     nodePar "Merge_Bed" 'atacConcatBed $ return ()
     nodePar "Call_Peak" 'atacCallPeak $ return ()
-
     node "Get_Peak" [| \(input1, input2) -> return $ atacGetNarrowPeak input1 ++ input2 
         |] $ return ()
-
-    path ["Get_Bam", "Filter_Bam", "Remove_Duplicates", "Bam_To_Bed"]
-    ["Download_Data", "Bam_To_Bed"] ~> "Get_Bed"
     path ["Get_Bed", "Merge_Bed", "Call_Peak"]
     ["Download_Data", "Call_Peak"] ~> "Get_Peak"
+
+    nodePar "Gene_Count" 'estimateExpr $ return ()
+    node "Make_Expr_Table" 'mkTable $ return ()
+    path ["Merge_Bed", "Gene_Count", "Make_Expr_Table"]
 
     nodePar "Align_QC_" [| liftIO . getMappingQC |] $ return ()
     node "Align_QC" [| return . combineMappingQC |] $ return ()
