@@ -34,20 +34,20 @@ library
                      , aeson
                      , bio-pipelines
                      , bytestring
+                     , binary
                      , bio-experiments
                      , bioinformatics-toolkit >= 0.8.0
                      , case-insensitive
                      , conduit-extra
                      , containers
                      , conduit
-                     , cereal
                      , data-default
                      , data-ordlist
+                     , dense-linear-algebra
                      , double-conversion
                      , filepath
                      , hvega
                      , HsHTSLib >= 1.9.2.1
-                     , lens
                      , mtl
                      , SciFlow >= 0.7.1
                      , text

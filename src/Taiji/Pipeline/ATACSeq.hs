@@ -4,22 +4,17 @@
 module Taiji.Pipeline.ATACSeq (builder) where
 
 import           Bio.Motif                              (readMEME)
-import           Bio.Data.Experiment
 import           Bio.Data.Experiment.Parser
 import           Bio.Pipeline.NGS.Utils
 import           Bio.Pipeline.Utils
-import           Control.Lens
-import           Control.Monad.IO.Class                 (liftIO)
-import           Control.Monad.Reader                   (asks)
 import           Data.List.Split                        (chunksOf)
-import           Data.Maybe                             
 import           Control.Workflow
 import           Data.Either                           (either)
 import qualified Data.Text                             as T
-import           Text.Printf                           (printf)
 
 import           Taiji.Pipeline.ATACSeq.Types
 import           Taiji.Pipeline.ATACSeq.Functions
+import           Taiji.Prelude
 
 builder :: Builder ()
 builder = do
@@ -119,10 +114,17 @@ builder = do
     node "Report_QC" 'saveQC $ return ()
     ["Dup_QC", "Fragment_Size_QC", "Align_QC"] ~> "Report_QC"
 
-
     node "Merge_Peaks" 'atacMergePeaks $ do
         doc .= "Merge peaks called from different samples together to form " <>
             "a non-overlapping set of open chromatin regions."
+    node "Compute_Peak_Signal_Prep" [| \(xs, y) -> return $
+        zip (concatMap split xs) $ repeat $ fromJust y|] $ return ()
+    nodePar "Compute_Peak_Signal" 'peakSignal $ return ()
+    node "Compute_Peak_Cor" 'peakCor $ return ()
+    path ["Get_Peak", "Merge_Peaks"]
+    ["Get_Bed", "Merge_Peaks"] ~> "Compute_Peak_Signal_Prep"
+    path ["Compute_Peak_Signal_Prep", "Compute_Peak_Signal", "Compute_Peak_Cor"]
+
     node "Find_TFBS_Prep" [| \region -> do
         motifFile <- fromMaybe (error "Motif file is not specified!") <$>
             asks _atacseq_motif_file
@@ -138,6 +140,6 @@ builder = do
 
     nodePar "Get_TFBS" [| atacGetMotifSite 50 |] $ do
         doc .= "Retrieve motif binding sites for each sample."
-    path ["Get_Peak", "Merge_Peaks", "Find_TFBS_Prep", "Find_TFBS_Union"]
+    path ["Merge_Peaks", "Find_TFBS_Prep", "Find_TFBS_Union"]
     ["Find_TFBS_Union", "Get_Peak"] ~> "Get_TFBS_Prep"
     ["Get_TFBS_Prep"] ~> "Get_TFBS"

@@ -19,24 +19,18 @@ module Taiji.Pipeline.ATACSeq.Functions.Core
     ) where
 
 import           Bio.Data.Bed                  (chrom)
-import           Bio.Data.Experiment
 import           Bio.Pipeline
-import           Control.Lens
-import           Control.Monad.IO.Class        (liftIO)
-import           Control.Monad.Reader          (ReaderT, asks)
 import           Data.Bifunctor                (bimap)
 import           Data.Coerce                   (coerce)
 import           Data.Either                   (lefts)
 import qualified Data.Map.Strict               as M
-import           Data.Maybe                    (fromJust)
-import           Data.Monoid                   ((<>))
 import           Data.Singletons.Prelude.List   (Elem)
 import           Data.Singletons               (SingI)
 import qualified Data.Text                     as T
 import           System.IO.Temp                (withTempFile)
-import           Text.Printf                   (printf)
 
 import           Taiji.Pipeline.ATACSeq.Types
+import           Taiji.Prelude
 
 type ATACSeqWithSomeFile = ATACSeq N [Either SomeFile (SomeFile, SomeFile)]
 

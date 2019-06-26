@@ -4,22 +4,24 @@
 module Taiji.Pipeline.ATACSeq.Functions.QC where
 
 import           Bio.Pipeline.Report
-import           Bio.Data.Experiment
+import Bio.Data.Bed.Utils
+import Bio.Data.Bed.Types
+import Bio.Data.Bed
 import qualified Data.Vector.Unboxed as U
-import Data.Maybe
+import Data.Binary
 import           Bio.Pipeline.Utils
 import qualified Data.Map.Strict               as M
-import           Control.Lens
-import           Control.Monad.Reader          (ReaderT, asks)
 import qualified Data.Text as T
-import Conduit
 import Bio.HTS
-import Text.Printf (printf)
+import Statistics.Correlation (pearsonMatByRow)
+import Statistics.Matrix (fromRows, toRowLists)
 import Graphics.Vega.VegaLite hiding (lookup)
 
 import           Taiji.Pipeline.ATACSeq.Types
 import           Taiji.Utils.Plot
-import           Taiji.Types ()
+import Taiji.Utils.Plot.ECharts hiding (title)
+import           Taiji.Prelude
+import qualified Taiji.Utils.DataFrame as DF
 
 saveQC :: ATACSeqConfig config
          => (Maybe VLSpec, [Maybe VLSpec], Maybe (VLSpec, VLSpec))
@@ -74,6 +76,39 @@ getDupQC input
                         dup = read $ T.unpack $ last $ T.words $ last xs
                         total = read $ T.unpack $ (T.words $ head xs) !! 1
                     in Just $ 100 * dup / total
+
+
+peakSignal :: ATACSeqConfig config
+           => ( ATACSeq S (Either (File '[] 'Bed) (File '[Gzip] 'Bed))
+              , File '[] 'Bed )   -- ^ Reference peak list
+           -> ReaderT config IO (ATACSeq S (File '[] 'Other))
+peakSignal (atac, peakFl) = do 
+    dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/Peaks"))
+    let output = printf "%s/%s_rep%d.signal.bin" dir (T.unpack $ atac^.eid)
+            (atac^.replicates._1)
+    atac & replicates.traverse.files %%~ liftIO . ( \fl -> do
+        regions <- runResourceT $ runConduit $ streamBed (peakFl^.location) .|
+            concatMapC (splitBedBySizeLeft 500) .| sinkList :: IO [BED3]
+        let readInput = either (streamBed . (^.location))
+                (streamBedGzip . (^.location)) 
+        res <- runResourceT $ runConduit $ readInput fl .|
+            rpkmBed regions :: IO (U.Vector Double)
+        encodeFile output res
+        return $ location .~ output $ emptyFile )
+
+peakCor :: ATACSeqConfig config
+        => [ATACSeq S (File '[] 'Other)]
+        -> ReaderT config IO ()
+peakCor inputs = do
+    dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/QC"))
+    let output = dir <> "/qc_correlation.html"
+        names = flip map inputs $ \x ->
+            (x^.eid) <> "_rep" <> T.pack (show $ x^.replicates._1)
+    liftIO $ do
+        cor <- fmap (pearsonMatByRow . fromRows) $ forM inputs $ \input ->
+            decodeFile $ input^.replicates._2.files.location
+        savePlots output [] $ [heatmap $ DF.mkDataFrame names names $ toRowLists cor]
+    
 
 {-
 getPeakQC :: (Elem 'Gzip tags1 ~ 'False, Elem 'Gzip tags2 ~ 'True)

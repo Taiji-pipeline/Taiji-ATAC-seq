@@ -18,22 +18,16 @@ import           Bio.Motif                     hiding (score)
 import           Bio.Pipeline.Instances        ()
 import           Bio.Pipeline.Utils
 import           Bio.Seq.IO
-import           Conduit
-import           Control.Lens
-import           Control.Monad.IO.Class        (liftIO)
-import           Control.Monad.Reader          (ReaderT, asks)
 import           Data.Default
-import           Data.Maybe                    (catMaybes, fromJust, fromMaybe)
-import           Data.Monoid                   ((<>))
 import qualified Data.Text                     as T
 import           Shelly                        (fromText, mkdir_p, shelly,
                                                 test_f)
 import           System.FilePath               (takeDirectory)
 import           System.IO
 import           System.IO.Temp                (emptyTempFile)
-import           Text.Printf                   (printf)
 
 import           Taiji.Pipeline.ATACSeq.Types
+import           Taiji.Prelude
 
 atacMergePeaks :: ATACSeqConfig config
                => [ATACSeq S (File '[] 'NarrowPeak)]
