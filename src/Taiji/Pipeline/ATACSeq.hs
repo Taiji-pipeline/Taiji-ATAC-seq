@@ -32,7 +32,7 @@ builder = do
     node "Make_Index" 'atacMkIndex $ doc .= "Generate the BWA index."
     node "Align_Prep" [| return . fst |] $ return ()
     nodePar "Align" 'atacAlign $ do
-        nCore .= 2
+        nCore .= 4
         doc .= "Read alignment using BWA. The default parameters are: " <>
             "bwa mem -M -k 32."
 
@@ -70,7 +70,8 @@ builder = do
 
     nodePar "Merge_Bed" 'atacConcatBed $ return ()
     nodePar "Call_Peak" 'atacCallPeak $ return ()
-    node "Get_Peak" [| \(input1, input2) -> return $ atacGetNarrowPeak input1 ++ input2 
+    node "Get_Peak" [| \(input1, input2) -> return $
+        atacGetNarrowPeak input1 ++ input2 
         |] $ return ()
     path ["Get_Bed", "Merge_Bed", "Call_Peak"]
     ["Download_Data", "Call_Peak"] ~> "Get_Peak"
@@ -79,44 +80,31 @@ builder = do
     node "Make_Expr_Table" 'mkTable $ return ()
     path ["Merge_Bed", "Gene_Count", "Make_Expr_Table"]
 
-    nodePar "Align_QC_" [| liftIO . getMappingQC |] $ return ()
-    node "Align_QC" [| return . combineMappingQC |] $ return ()
-    path ["Align", "Align_QC_", "Align_QC"]
 
-    node "Dup_QC" [| return . getDupQC |] $ return ()
-    ["Remove_Duplicates"] ~> "Dup_QC"
+-------------------------------------------------------------------------------
+-- Quality control
+-------------------------------------------------------------------------------
+    nodePar "Align_Stat" [| liftIO . alignStat |] $ return ()
+    node "QC_Align" 'alignQC $ return ()
+    path ["Align", "Align_Stat", "QC_Align"]
 
-    nodePar "Fragment_Size_QC" [| liftIO . plotFragmentQC |] $ return ()
-    ["Remove_Duplicates"] ~> "Fragment_Size_QC"
+    node "QC_Duplication" 'dupRate $ return ()
+    ["Remove_Duplicates"] ~> "QC_Duplication"
 
-    {-
-    node' "Correlation_QC_Prep" [| \(beds, peaks) ->
-        let peaks' = map (\x -> (x^.eid, x^.replicates._2.files)) peaks
-        in flip map beds $ \bed -> ( bed, fromJust $ lookup (bed^.eid) peaks' )
-        |] $ submitToRemote .= Just False
-    nodeP 1 "Correlation_QC" 'peakQC $ return ()
-    ["Get_Bed", "Call_Peak"] ~> "Correlation_QC_Prep"
-    path ["Correlation_QC_Prep", "Correlation_QC"]
-    -}
+    nodePar "Fragment_Size_Distr" [| liftIO . fragDistr |] $ return ()
+    node "QC_Fragment_Size" 'fragDistrQC $ return ()
+    path ["Remove_Duplicates", "Fragment_Size_Distr", "QC_Fragment_Size"]
 
-    {-
-    -- Calculate correlation between experiments
-    node' "Correlation_Prep" [| \(beds, peak) ->
-        let comb (x:xs) = zip (repeat x) xs ++ comb xs
-            comb [] = []
-        in zip (comb beds) $ repeat peak
-        |] $ submitToRemote .= Just False
-    ["Merge_Bed", "Merge_Peaks"] ~> "Correlation_Prep"
-    nodeP 1 "Correlation" 'atacCorrelation $ return ()
-    path ["Correlation_Prep", "Correlation"]
-    -}
+    node "Compute_TE_Prep" [| return . concatMap split |] $ return ()
+    nodePar "Compute_TE" 'computeTE $ return ()
+    node "QC_TE" 'teQC $ return ()
+    path ["Get_Bed", "Compute_TE_Prep", "Compute_TE", "QC_TE"]
 
-    node "Report_QC" 'saveQC $ return ()
-    ["Dup_QC", "Fragment_Size_QC", "Align_QC"] ~> "Report_QC"
 
     node "Merge_Peaks" 'atacMergePeaks $ do
         doc .= "Merge peaks called from different samples together to form " <>
             "a non-overlapping set of open chromatin regions."
+
     node "Compute_Peak_Signal_Prep" [| \(xs, y) -> return $
         zip (concatMap split xs) $ repeat $ fromJust y|] $ return ()
     nodePar "Compute_Peak_Signal" 'peakSignal $ return ()

@@ -76,11 +76,11 @@ atacAlign input = do
     input & replicates.traverse.files %%~ liftIO . ( \fl -> case fl of
         Left f ->
             let f' = fromSomeTags f :: File '[] 'Fastq
-            in bwaAlign output idx (Left f') $ defaultBWAOpts & bwaCores .~ 2
+            in bwaAlign output idx (Left f') $ defaultBWAOpts & bwaCores .~ 4
         Right (f1,f2) ->
             let f1' = fromSomeTags f1 :: File '[] 'Fastq
                 f2' = fromSomeTags f2 :: File '[] 'Fastq
-            in bwaAlign output idx (Right (f1', f2')) $ defaultBWAOpts & bwaCores .~ 2
+            in bwaAlign output idx (Right (f1', f2')) $ defaultBWAOpts & bwaCores .~ 4
         )
 
 -- | Grab bam files
@@ -139,10 +139,10 @@ atacConcatBed :: ( ATACSeqConfig config
 atacConcatBed input = do
     dir <- asks ((<> "/Bed") . _atacseq_output_dir) >>= getPath
     let output = printf "%s/%s_rep0_merged.bed.gz" dir (T.unpack $ input^.eid)
-    fl <- liftIO $ concatBed output fls
+    fl <- case input^..replicates.folded.files of
+        [Right fl] -> return $ location .~ (fl^.location) $ emptyFile
+        fls -> liftIO $ concatBed output fls
     return $ input & replicates .~ (0, Replicate fl M.empty)
-  where
-    fls = input^..replicates.folded.files
 
 atacCallPeak :: (ATACSeqConfig config, SingI tags)
              => ATACSeq S (File tags 'Bed)

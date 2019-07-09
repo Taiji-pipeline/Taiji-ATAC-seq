@@ -46,7 +46,6 @@ library
                      , dense-linear-algebra
                      , double-conversion
                      , filepath
-                     , hvega
                      , HsHTSLib >= 1.9.2.1
                      , mtl
                      , SciFlow >= 0.7.1

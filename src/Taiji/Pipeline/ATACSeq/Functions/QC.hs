@@ -6,8 +6,12 @@ module Taiji.Pipeline.ATACSeq.Functions.QC where
 import           Bio.Pipeline.Report
 import Bio.Data.Bed.Utils
 import Bio.Data.Bed.Types
+import Bio.RealWorld.GENCODE
 import Bio.Data.Bed
+import Bio.Utils.Functions (slideAverage)
+import qualified Data.ByteString.Char8 as B
 import qualified Data.Vector.Unboxed as U
+import qualified Data.Vector.Unboxed.Mutable as UM
 import Data.Binary
 import           Bio.Pipeline.Utils
 import qualified Data.Map.Strict               as M
@@ -15,39 +19,32 @@ import qualified Data.Text as T
 import Bio.HTS
 import Statistics.Correlation (pearsonMatByRow)
 import Statistics.Matrix (fromRows, toRowLists)
-import Graphics.Vega.VegaLite hiding (lookup)
 
 import           Taiji.Pipeline.ATACSeq.Types
 import           Taiji.Utils.Plot
-import Taiji.Utils.Plot.ECharts hiding (title)
+import Taiji.Utils.Plot.ECharts
 import           Taiji.Prelude
 import qualified Taiji.Utils.DataFrame as DF
 
-saveQC :: ATACSeqConfig config
-         => (Maybe VLSpec, [Maybe VLSpec], Maybe (VLSpec, VLSpec))
-         -> ReaderT config IO ()
-saveQC (Nothing, [], Nothing) = return ()
-saveQC (x, y, z) = do
-    dir <- asks _atacseq_output_dir >>= getPath
-    let output = dir ++ "/atac_seq_qc.html"
-        plts = maybe [] return x ++ catMaybes y ++
-            maybe [] (\(a,b) -> [a,b]) z
-    liftIO $ savePlots output plts []
-
-combineMappingQC :: [(String, Double, Double)] -> Maybe (VLSpec, VLSpec)
-combineMappingQC xs
-    | null xs = Nothing
-    | otherwise = Just
-        ( vegaBar "percent mapped reads" "sample" "%Reads" $ zip name p
-        , vegaBar "percent chrM reads" "sample" "%Reads" $ zip name chrM )
+alignQC :: ATACSeqConfig config
+        => [(String, Double, Double)]
+        -> ReaderT config IO ()
+alignQC xs
+    | null xs = return ()
+    | otherwise = do
+        dir <- qcDir
+        let output = dir <> "mapping_qc.html"
+        liftIO $ savePlots output [] [stackBar df]
   where
-    (name, p, chrM) = unzip3 $
+    df = DF.mkDataFrame ["percent mapped reads", "percent chrM reads"] names $
+        [p, chrM]
+    (names, p, chrM) = unzip3 $
         map (\(a,b,c) -> (T.pack a, 100*b, 100*c)) xs
 
 -- | Return name, percent_mapped_reads and percent_chrM_reads.
-getMappingQC :: ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))
-               -> IO (String, Double, Double)
-getMappingQC e = do
+alignStat :: ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))
+          -> IO (String, Double, Double)
+alignStat e = do
     stats <- either bamStat bamStat $ e^.replicates._2.files
     let p = fromIntegral (_mapped_tags stats) / fromIntegral (_total_tags stats)
         chrM = case lookup "chrM" (_mapped_tags_by_chrom stats) of
@@ -55,17 +52,22 @@ getMappingQC e = do
                 Nothing -> 0
                 Just x -> fromIntegral x / fromIntegral (_mapped_tags stats)
             Just x -> fromIntegral x / fromIntegral (_mapped_tags stats)
-    return (name, p, chrM)
+    return (nm, p, chrM)
   where
-    name = printf "%s_rep%d" (T.unpack $ e^.eid) (e^.replicates._1)
+    nm = printf "%s_rep%d" (T.unpack $ e^.eid) (e^.replicates._1)
 
-getDupQC :: [ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))]
-         -> Maybe VLSpec
-getDupQC input
-    | null input = Nothing
-    | otherwise = Just $ vegaBar "duplication rate" "sample" "% reads" $
-        mapMaybe getDupRate input
+dupRate :: ATACSeqConfig config
+        => [ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))]
+        -> ReaderT config IO ()
+dupRate input
+    | null input = return ()
+    | otherwise = do
+        dir <- qcDir
+        let output = dir <> "/qc_duplication_rate.html"
+        liftIO $ savePlots output [] [stackBar df]
   where
+    df = DF.mkDataFrame ["duplication_rate"] names [dat]
+    (names, dat) = unzip $ mapMaybe getDupRate input
     getDupRate e = case either getResult getResult (e^.replicates._2.files) of
         Nothing -> Nothing
         Just r ->  Just
@@ -76,7 +78,6 @@ getDupQC input
                         dup = read $ T.unpack $ last $ T.words $ last xs
                         total = read $ T.unpack $ (T.words $ head xs) !! 1
                     in Just $ 100 * dup / total
-
 
 peakSignal :: ATACSeqConfig config
            => ( ATACSeq S (Either (File '[] 'Bed) (File '[Gzip] 'Bed))
@@ -96,11 +97,12 @@ peakSignal (atac, peakFl) = do
         encodeFile output res
         return $ location .~ output $ emptyFile )
 
+-- | Compute correlation between experiments.
 peakCor :: ATACSeqConfig config
         => [ATACSeq S (File '[] 'Other)]
         -> ReaderT config IO ()
 peakCor inputs = do
-    dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/QC"))
+    dir <- qcDir
     let output = dir <> "/qc_correlation.html"
         names = flip map inputs $ \x ->
             (x^.eid) <> "_rep" <> T.pack (show $ x^.replicates._1)
@@ -108,61 +110,30 @@ peakCor inputs = do
         cor <- fmap (pearsonMatByRow . fromRows) $ forM inputs $ \input ->
             decodeFile $ input^.replicates._2.files.location
         savePlots output [] $ [heatmap $ DF.mkDataFrame names names $ toRowLists cor]
-    
 
-{-
-getPeakQC :: (Elem 'Gzip tags1 ~ 'False, Elem 'Gzip tags2 ~ 'True)
-          => ( ATACSeq N (Either (File tags1 'Bed) (File tags2 'Bed))
-             , File tags3 'NarrowPeak )
-          -> IO [QC]
-getPeakQC (e, peakFl)
-    | IM.size (e^.replicates) < 2 = return []
-    | otherwise = do
-        regions <- fmap sortBed $ runConduit $
-            (readBed (peakFl^.location) :: ConduitT () BED IO ()) .|
-            concatMapC (splitBedBySizeLeft 250) .| sinkList
-        readcounts <- fmap IM.toList $ forM (e^.replicates) $ \r ->
-            case r^.files of
-                Left fl -> runConduit $ readBed (fl^.location) .|
-                    rpkmSortedBed regions
-                Right fl -> runResourceT $ runConduit $
-                    sourceFile (fl^.location) .| ungzip .|
-                    linesUnboundedAsciiC .| mapC (fromLine :: _ -> BED) .|
-                    rpkmSortedBed regions
-        return $ flip map (comb readcounts) $ \((i1, r1), (i2,r2)) ->
-            let name = Pair 
-                    (printf "%s_rep%d" (T.unpack $ e^.eid) i1)
-                    (printf "%s_rep%d" (T.unpack $ e^.eid) i2)
-            in QC "signal_correlation" name (pearson $ U.zip r1 r2) Nothing
+teQC :: ATACSeqConfig config => [(T.Text, U.Vector Double)] -> ReaderT config IO ()
+teQC xs = do
+    dir <- qcDir
+    let output = dir <> "/qc_tss_enrichment.html"
+    liftIO $ savePlots output [] [p1,p2]
   where
-    comb (x:xs) = zip (repeat x) xs ++ comb xs
-    comb [] = []
-    -}
+    p1 = stackBar $ DF.mkDataFrame ["TSS Enrichment"] names [map U.maximum vals]
+    p2 = stackLine $ DF.mkDataFrame names (map (T.pack . show) [-1000..999::Int]) $
+        map U.toList vals
+    (names, vals) = unzip xs
 
-{-
--- | Correlation of ATAC-seq signals between samples.
-atacCorrelation :: ( (ATACSeq S (File '[Gzip] 'Bed), ATACSeq S (File '[Gzip] 'Bed))
-                   , File '[] 'Bed )
-                -> IO QC
-atacCorrelation ((e1, e2), peakFl) = do
-    regions <- fmap sortBed $ runConduit $
-        (readBed (peakFl^.location) :: ConduitT () BED IO ()) .|
-        concatMapC (splitBedBySizeLeft 250) .| sinkList
-    let f1 = e1^.replicates._2.files.location
-        f2 = e2^.replicates._2.files.location
-    r1 <- runResourceT $ runConduit $
-        sourceFile f1 .| ungzip .|
-        linesUnboundedAsciiC .| mapC (fromLine :: _ -> BED) .|
-        rpkmSortedBed regions
-    r2 <- runResourceT $ runConduit $
-        sourceFile f2 .| ungzip .|
-        linesUnboundedAsciiC .| mapC (fromLine :: _ -> BED) .|
-        rpkmSortedBed regions
-    let name = Pair (T.unpack $ e1^.eid) (T.unpack $ e2^.eid)
-    return $ QC "signal_correlation" name (pearson $ U.zip r1 r2) Nothing
--}
+computeTE :: ATACSeqConfig config
+          => ATACSeq S (Either (File '[] 'Bed) (File '[Gzip] 'Bed))
+          -> ReaderT config IO (T.Text, U.Vector Double)
+computeTE input = do
+    genes <- asks _atacseq_annotation >>= liftIO . readGenes . fromJust
+    let tss = flip map genes $ \g -> (geneChrom g, geneLeft g, geneStrand g)
+        readInput = either (streamBed . (^.location))
+            (streamBedGzip . (^.location))
+    res <- liftIO $ runResourceT $ runConduit $
+        readInput (input^.replicates._2.files) .| tssEnrichment tss
+    return (input^.eid <> "_rep" <> T.pack (show $ input^.replicates._1), res)
 
-{-
 -- | Transcription Start Site (TSS) Enrichment Score
 -- The TSS enrichment calculation is a signal to noise calculation.
 -- The reads around a reference set of TSSs are collected to
@@ -178,34 +149,61 @@ atacCorrelation ((e1, e2), peakFl) = do
 -- increase in signal up to a peak in the middle. We take the signal
 -- value at the center of the distribution after this normalization
 -- as our TSS enrichment metric. Used to evaluate ATAC-seq. 
-atacTSSEnrichment :: -> WorkflowConfig config QC
-atacTSSEnrichment = do
-    anno <- 
--}
+--
+-- 1. For each TSS, get per base coverage for the 1000 bp flanking region.
+--    We will get a matrix of #TSS x 2000 bp dimension.
+-- 2. Do a column sum of the matrix.
+-- 3. Sum of the coverage of the endFlank (100bp) at both ends and divide
+--    by 200 bp to get a normalization factor.
+-- 4. divide the the normalization factor for -1900 to + 1900 bp to get per base normalized coverage.
+-- 5. do a smoothing with a defined window (50bp by default) using zoo::rollmean.
+-- 6. select the highest value within a window (highest_tss_flank, 50 bp by default)
+--    around the TSS because the highest peak is not necessary at exactly the TSS
+--    site (position 0)
+tssEnrichment :: [(B.ByteString, Int, Bool)]   -- ^ A list of TSSs
+              -> ConduitT BED o (ResourceT IO) (U.Vector Double)
+tssEnrichment tss = mapC getCutSite .| intersectBedWith f regions .| sink
+  where
+    sink = do
+        vec <- liftIO $ UM.replicate 2000 (0 :: Int)
+        mapM_C $ mapM_ $ UM.unsafeModify vec (+1)
+        liftIO $ normalize <$> U.unsafeFreeze vec
+    normalize vec = slideAverage 25 $ U.map ((/bk) . fromIntegral) vec
+      where
+        bk = fromIntegral (U.sum (U.take 100 vec) + U.sum (U.drop 1900 vec)) / 200
+    getCutSite x = BED3 (x^.chrom) i $ i + 1
+      where
+        i = case x^.strand of
+            Just False -> x^.chromEnd - 1
+            _ -> x^.chromStart
+    f x ys = flip map ys $ \y -> case y^.strand of
+        Just False -> 1999 - (x^.chromStart - y^.chromStart)
+        _ -> x^.chromStart - y^.chromStart 
+    regions = map ( \(chr, x, str) ->
+        BED chr (x - 1000) (x + 1000) Nothing Nothing $ Just str ) tss
 
-plotFragmentQC :: ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))
-               -> IO (Maybe VLSpec)
-plotFragmentQC input = case input^.replicates._2.files of
+-- | Plot QC for fragment size distribution.
+fragDistrQC :: ATACSeqConfig config 
+            => [Maybe (T.Text, U.Vector Double)]
+            -> ReaderT config IO ()
+fragDistrQC xs = do
+    dir <- qcDir
+    let output = dir <> "fragment_size_distr.html"
+    liftIO $ savePlots output [] plts
+  where
+    plts = flip map (catMaybes xs) $ \(nm, dat) -> 
+        let df = DF.mkDataFrame ["fragment_count"] labels [U.toList dat]
+        in stackLine df <> title (T.unpack nm)
+    labels = map (T.pack . show) [0..1000 :: Int]
+
+-- | Compute fragment size distribution.
+fragDistr :: ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))
+          -> IO (Maybe (T.Text, U.Vector Double))
+fragDistr input = case input^.replicates._2.files of
     Left _ -> return Nothing
     Right fl -> do
         r <- runResourceT $ runConduit $
             streamBam (fl^.location) .| fragmentSizeDistr 1001
-        let (xs, ys) = unzip $ zip [0..] $ U.toList r
-        return $ Just $ plt xs ys
+        return $ Just (nm, r)
   where
-    plt xs ys = fromVL $ toVegaLite
-        [ title $ T.pack $ printf "fragment_size_%s_rep%d"
-            (T.unpack $ input^.eid) (input^.replicates._1)
-        , background "white"
-        , dat
-        , mark Line []
-        , width 600
-        , height 300
-        , enc ]
-      where
-        dat = dataFromColumns [] $
-            dataColumn "fragment size" (Numbers xs) $
-            dataColumn "normalized count" (Numbers ys) []
-        enc = encoding $
-            position X [PName "fragment size", PmType Quantitative, PAxis [AxTitle "Fragment size"]] $
-            position Y [PName "normalized count", PmType Quantitative] []
+    nm = (input^.eid) <> "_rep" <> (T.pack $ show $ input^.replicates._1)

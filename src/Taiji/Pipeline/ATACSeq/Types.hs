@@ -1,7 +1,10 @@
+{-# LANGUAGE OverloadedStrings     #-}
 module Taiji.Pipeline.ATACSeq.Types where
 
 import Bio.Pipeline.Utils (Directory)
 import Bio.Pipeline.CallPeaks (CallPeakOpts)
+
+import Taiji.Prelude
 
 class ATACSeqConfig config where
     _atacseq_output_dir :: config -> Directory
@@ -12,3 +15,6 @@ class ATACSeqConfig config where
     _atacseq_motif_file :: config -> Maybe FilePath
     _atacseq_callpeak_opts :: config -> CallPeakOpts
     _atacseq_annotation :: config -> Maybe FilePath
+
+qcDir :: ATACSeqConfig config => ReaderT config IO FilePath
+qcDir = asks _atacseq_output_dir >>= getPath . (<> "/QC/")
