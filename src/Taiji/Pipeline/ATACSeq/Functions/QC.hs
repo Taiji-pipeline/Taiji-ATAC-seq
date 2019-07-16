@@ -127,7 +127,11 @@ computeTE :: ATACSeqConfig config
           -> ReaderT config IO (T.Text, U.Vector Double)
 computeTE input = do
     genes <- asks _atacseq_annotation >>= liftIO . readGenes . fromJust
-    let tss = flip map genes $ \g -> (geneChrom g, geneLeft g, geneStrand g)
+    let tss = flip map genes $ \g -> 
+            let chr = geneChrom g
+                str = geneStrand g
+                x = if str then geneLeft g else geneRight g
+            in (chr, x, str)
         readInput = either (streamBed . (^.location))
             (streamBedGzip . (^.location))
     res <- liftIO $ runResourceT $ runConduit $
@@ -174,8 +178,8 @@ tssEnrichment tss = mapC getCutSite .| intersectBedWith f regions .| sink
     getCutSite x = BED3 (x^.chrom) i $ i + 1
       where
         i = case x^.strand of
-            Just False -> x^.chromEnd - 1
-            _ -> x^.chromStart
+            Just False -> x^.chromEnd - 76
+            _ -> x^.chromStart + 75
     f x ys = flip map ys $ \y -> case y^.strand of
         Just False -> 1999 - (x^.chromStart - y^.chromStart)
         _ -> x^.chromStart - y^.chromStart 
