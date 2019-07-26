@@ -118,7 +118,7 @@ teQC xs = do
     liftIO $ savePlots output [] [p1,p2]
   where
     p1 = stackBar $ DF.mkDataFrame ["TSS Enrichment"] names [map U.maximum vals]
-    p2 = stackLine $ DF.mkDataFrame names (map (T.pack . show) [-1000..999::Int]) $
+    p2 = stackLine $ DF.mkDataFrame names (map (T.pack . show) [-2000..2000::Int]) $
         map U.toList vals
     (names, vals) = unzip xs
 
@@ -169,22 +169,22 @@ tssEnrichment :: [(B.ByteString, Int, Bool)]   -- ^ A list of TSSs
 tssEnrichment tss = mapC getCutSite .| intersectBedWith f regions .| sink
   where
     sink = do
-        vec <- liftIO $ UM.replicate 2000 (0 :: Int)
+        vec <- liftIO $ UM.replicate 4000 0
         mapM_C $ mapM_ $ UM.unsafeModify vec (+1)
         liftIO $ normalize <$> U.unsafeFreeze vec
-    normalize vec = slideAverage 25 $ U.map ((/bk) . fromIntegral) vec
+    normalize vec = slideAverage 5 $ U.map (/bk) vec
       where
-        bk = fromIntegral (U.sum (U.take 100 vec) + U.sum (U.drop 1900 vec)) / 200
+        bk = (U.sum (U.take 100 vec) + U.sum (U.drop 3900 vec)) / 200 + 0.1
     getCutSite x = BED3 (x^.chrom) i $ i + 1
       where
         i = case x^.strand of
             Just False -> x^.chromEnd - 76
             _ -> x^.chromStart + 75
     f x ys = flip map ys $ \y -> case y^.strand of
-        Just False -> 1999 - (x^.chromStart - y^.chromStart)
+        Just False -> 3999 - (x^.chromStart - y^.chromStart)
         _ -> x^.chromStart - y^.chromStart 
     regions = map ( \(chr, x, str) ->
-        BED chr (x - 1000) (x + 1000) Nothing Nothing $ Just str ) tss
+        BED chr (x - 2000) (x + 2000) Nothing Nothing $ Just str ) tss
 
 -- | Plot QC for fragment size distribution.
 fragDistrQC :: ATACSeqConfig config 
