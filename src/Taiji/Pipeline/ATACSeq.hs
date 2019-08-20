@@ -8,6 +8,7 @@ import           Bio.Data.Experiment.Parser
 import           Bio.Pipeline.NGS.Utils
 import           Bio.Pipeline.Utils
 import           Data.List.Split                        (chunksOf)
+import qualified Data.HashSet as S
 import           Control.Workflow
 import           Data.Either                           (either)
 import qualified Data.Text                             as T
@@ -67,13 +68,23 @@ builder = do
         |] $ return ()
     path ["Get_Bam", "Filter_Bam", "Remove_Duplicates", "Bam_To_Bed"]
     ["Download_Data", "Bam_To_Bed"] ~> "Get_Bed"
-
     nodePar "Merge_Bed" 'atacConcatBed $ return ()
+    path ["Get_Bed", "Merge_Bed"]
+
+    node "Get_Peak" [| return . atacGetNarrowPeak |] $ return ()
+    ["Download_Data"] ~> "Get_Peak"
+
+    node "Call_Peak_Prep" [| \(beds, inputs) -> do
+        let ids = S.fromList $ map (^.eid) $ atacGetNarrowPeak inputs
+        return $ filter (\x -> not $ S.member (x^.eid) ids) beds
+        |] $ return ()
+    ["Merge_Bed", "Download_Data"] ~> "Call_Peak_Prep"
     nodePar "Call_Peak" 'atacCallPeak $ return ()
+    path ["Call_Peak_Prep", "Call_Peak"]
+
     node "Get_Peak" [| \(input1, input2) -> return $
         atacGetNarrowPeak input1 ++ input2 
         |] $ return ()
-    path ["Get_Bed", "Merge_Bed", "Call_Peak"]
     ["Download_Data", "Call_Peak"] ~> "Get_Peak"
 
     nodePar "Gene_Count" 'estimateExpr $ return ()
