@@ -71,9 +71,6 @@ builder = do
     nodePar "Merge_Bed" 'atacConcatBed $ return ()
     path ["Get_Bed", "Merge_Bed"]
 
-    node "Get_Peak" [| return . atacGetNarrowPeak |] $ return ()
-    ["Download_Data"] ~> "Get_Peak"
-
     node "Call_Peak_Prep" [| \(beds, inputs) -> do
         let ids = S.fromList $ map (^.eid) $ atacGetNarrowPeak inputs
         return $ filter (\x -> not $ S.member (x^.eid) ids) beds
