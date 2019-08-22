@@ -64,7 +64,7 @@ builder = do
         let f [x] = x
             f _   = error "Must contain exactly 1 file"
         in return $ mapped.replicates.mapped.files %~ f $ mergeExp $ atacGetBed input1 ++
-            (input2 & mapped.replicates.mapped.files %~ Right)
+            (input2 & mapped.replicates.mapped.files %~ Left)
         |] $ return ()
     path ["Get_Bam", "Filter_Bam", "Remove_Duplicates", "Bam_To_Bed"]
     ["Download_Data", "Bam_To_Bed"] ~> "Get_Bed"

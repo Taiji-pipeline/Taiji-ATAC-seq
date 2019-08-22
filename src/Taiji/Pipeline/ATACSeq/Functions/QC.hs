@@ -80,7 +80,7 @@ dupRate input
                     in Just $ 100 * dup / total
 
 peakSignal :: ATACSeqConfig config
-           => ( ATACSeq S (Either (File '[] 'Bed) (File '[Gzip] 'Bed))
+           => ( ATACSeq S (Either (File '[Gzip] 'Bed) (File '[PairedEnd, Gzip] 'Bed))
               , File '[] 'Bed )   -- ^ Reference peak list
            -> ReaderT config IO (ATACSeq S (File '[] 'Other))
 peakSignal (atac, peakFl) = do 
@@ -90,12 +90,16 @@ peakSignal (atac, peakFl) = do
     atac & replicates.traverse.files %%~ liftIO . ( \fl -> do
         regions <- runResourceT $ runConduit $ streamBed (peakFl^.location) .|
             concatMapC (splitBedBySizeLeft 500) .| sinkList :: IO [BED3]
-        let readInput = either (streamBed . (^.location))
-                (streamBedGzip . (^.location)) 
+        let readInput = either (streamBedGzip . (^.location))
+                (\x -> streamBedGzip (x^.location) .| concatMapC f) 
         res <- runResourceT $ runConduit $ readInput fl .|
             rpkmBed regions :: IO (U.Vector Double)
         encodeFile output res
         return $ location .~ output $ emptyFile )
+  where
+    f :: BED -> [BED]
+    f x = [ BED (x^.chrom) (x^.chromStart) (x^.chromStart + 1) (x^.name) Nothing (Just True)
+          , BED (x^.chrom) (x^.chromEnd - 1) (x^.chromEnd) (x^.name) Nothing (Just False) ]
 
 -- | Compute correlation between experiments.
 peakCor :: ATACSeqConfig config
@@ -123,7 +127,7 @@ teQC xs = do
     (names, vals) = unzip xs
 
 computeTE :: ATACSeqConfig config
-          => ATACSeq S (Either (File '[] 'Bed) (File '[Gzip] 'Bed))
+          => ATACSeq S (Either (File '[Gzip] 'Bed) (File '[PairedEnd, Gzip] 'Bed))
           -> ReaderT config IO (T.Text, U.Vector Double)
 computeTE input = do
     genes <- asks _atacseq_annotation >>= liftIO . readGenes . fromJust
@@ -132,11 +136,15 @@ computeTE input = do
                 str = geneStrand g
                 x = if str then geneLeft g else geneRight g
             in (chr, x, str)
-        readInput = either (streamBed . (^.location))
-            (streamBedGzip . (^.location))
+        readInput = either (streamBedGzip . (^.location))
+            (\x -> streamBedGzip (x^.location) .| concatMapC f)
     res <- liftIO $ runResourceT $ runConduit $
         readInput (input^.replicates._2.files) .| tssEnrichment tss
     return (input^.eid <> "_rep" <> T.pack (show $ input^.replicates._1), res)
+  where
+    f :: BED -> [BED]
+    f x = [ BED (x^.chrom) (x^.chromStart) (x^.chromStart + 1) (x^.name) Nothing (Just True)
+          , BED (x^.chrom) (x^.chromEnd - 1) (x^.chromEnd) (x^.name) Nothing (Just False) ]
 
 -- | Transcription Start Site (TSS) Enrichment Score
 -- The TSS enrichment calculation is a signal to noise calculation.
