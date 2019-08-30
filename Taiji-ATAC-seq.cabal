@@ -26,6 +26,7 @@ library
                        Taiji.Pipeline.ATACSeq.Functions
                        Taiji.Pipeline.ATACSeq.Functions.GeneQuant
                        Taiji.Pipeline.ATACSeq.Functions.Core
+                       Taiji.Pipeline.ATACSeq.Functions.Core.Extra
                        Taiji.Pipeline.ATACSeq.Functions.QC
                        Taiji.Pipeline.ATACSeq.Functions.Motif
                        Taiji.Pipeline.ATACSeq.Types
