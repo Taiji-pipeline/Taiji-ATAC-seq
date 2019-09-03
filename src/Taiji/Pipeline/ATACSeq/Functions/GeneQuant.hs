@@ -29,7 +29,7 @@ estimateExpr :: ATACSeqConfig config
              => ATACSeq S (File '[Gzip] 'Bed)
              -> ReaderT config IO (ATACSeq S (File '[GeneQuant] 'Tsv))
 estimateExpr input = do
-    genes <- asks _atacseq_annotation >>= liftIO . readGenes . fromJust
+    genes <- getAnnotation >>= liftIO . readGenes
     dir <- asks ((<> "/GeneQuant") . _atacseq_output_dir) >>= getPath
     let output = printf "%s/%s_rep%d_gene_quant.tsv" dir (T.unpack $ input^.eid)
             (input^.replicates._1)

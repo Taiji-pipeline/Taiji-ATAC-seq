@@ -35,7 +35,7 @@ atacMkIndex :: ATACSeqConfig config => [a] -> ReaderT config IO ()
 atacMkIndex input
     | null input = return ()
     | otherwise = do
-        genome <- asks (fromJust . _atacseq_genome_fasta)
+        genome <- getGenomeFasta
         -- Generate BWA index
         dir <- asks (fromJust . _atacseq_bwa_index)
         _ <- liftIO $ bwaMkIndex genome dir

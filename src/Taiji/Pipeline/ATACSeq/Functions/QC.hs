@@ -130,7 +130,7 @@ computeTE :: ATACSeqConfig config
           => ATACSeq S (Either (File '[Gzip] 'Bed) (File '[PairedEnd, Gzip] 'Bed))
           -> ReaderT config IO (T.Text, U.Vector Double)
 computeTE input = do
-    genes <- asks _atacseq_annotation >>= liftIO . readGenes . fromJust
+    genes <- getAnnotation >>= liftIO . readGenes
     let tss = flip map genes $ \g -> 
             let chr = geneChrom g
                 str = geneStrand g

@@ -121,11 +121,8 @@ builder = do
     ["Get_Bed", "Merge_Peaks"] ~> "Compute_Peak_Signal_Prep"
     path ["Compute_Peak_Signal_Prep", "Compute_Peak_Signal", "Compute_Peak_Cor"]
 
-    node "Find_TFBS_Prep" [| \region -> do
-        motifFile <- fromMaybe (error "Motif file is not specified!") <$>
-            asks _atacseq_motif_file
-        motifs <- liftIO $ readMEME motifFile
-        return $ zip (repeat region) $ chunksOf 100 motifs
+    node "Find_TFBS_Prep" [| \region -> getMotif >>= liftIO . readMEME >>=
+        return . zip (repeat region) . chunksOf 100
         |] $ doc .= "Prepare for parallel execution."
     nodePar "Find_TFBS_Union" [| \x -> atacFindMotifSiteAll 5e-5 x |] $ do
         doc .= "Identify TF binding sites in open chromatin regions using " <>
