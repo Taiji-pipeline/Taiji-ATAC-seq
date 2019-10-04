@@ -205,7 +205,7 @@ fragDistrQC xs = do
   where
     plts = flip map (catMaybes xs) $ \(nm, dat) -> 
         let df = DF.mkDataFrame ["fragment_count"] labels [U.toList dat]
-        in stackLine df <> title (T.unpack nm)
+        in addAttr (title (T.unpack nm)) $ stackLine df
     labels = map (T.pack . show) [0..1000 :: Int]
 
 -- | Compute fragment size distribution.
