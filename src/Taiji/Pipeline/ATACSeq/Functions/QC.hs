@@ -105,6 +105,7 @@ peakSignal (atac, peakFl) = do
 peakCor :: ATACSeqConfig config
         => [ATACSeq S (File '[] 'Other)]
         -> ReaderT config IO ()
+peakCor [] = return ()
 peakCor inputs = do
     dir <- qcDir
     let output = dir <> "/qc_correlation.html"
@@ -116,6 +117,7 @@ peakCor inputs = do
         savePlots output [] $ [heatmap $ DF.mkDataFrame names names $ toRowLists cor]
 
 teQC :: ATACSeqConfig config => [(T.Text, U.Vector Double)] -> ReaderT config IO ()
+teQC [] = return ()
 teQC xs = do
     dir <- qcDir
     let output = dir <> "/qc_tss_enrichment.html"
@@ -198,6 +200,7 @@ tssEnrichment tss = mapC getCutSite .| intersectBedWith f regions .| sink
 fragDistrQC :: ATACSeqConfig config 
             => [Maybe (T.Text, U.Vector Double)]
             -> ReaderT config IO ()
+fragDistrQC [] = return ()
 fragDistrQC xs = do
     dir <- qcDir
     let output = dir <> "fragment_size_distr.html"
