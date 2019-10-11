@@ -1,8 +1,21 @@
 {-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE OverloadedStrings     #-}
-module Taiji.Pipeline.ATACSeq.Functions.QC where
+module Taiji.Pipeline.ATACSeq.Functions.QC
+    ( plotFragDistr
+    , plotAlignQC
+    , plotDupRate
+    , plotTE
+    , plotPeakCor
 
+    , computeTE
+    , fragDistr
+    , alignStat
+    , peakSignal
+    ) where
+
+import Language.Javascript.JMacro
 import           Bio.Pipeline.Report
 import Bio.Data.Bed.Utils
 import Bio.Data.Bed.Types
@@ -21,21 +34,19 @@ import Statistics.Correlation (pearsonMatByRow)
 import Statistics.Matrix (fromRows, toRowLists)
 
 import           Taiji.Pipeline.ATACSeq.Types
-import           Taiji.Utils.Plot
 import Taiji.Utils.Plot.ECharts
 import           Taiji.Prelude
 import qualified Taiji.Utils.DataFrame as DF
 
-alignQC :: ATACSeqConfig config
-        => [(String, Double, Double)]
-        -> ReaderT config IO ()
-alignQC xs
-    | null xs = return ()
-    | otherwise = do
-        dir <- qcDir
-        let output = dir <> "mapping_qc.html"
-        liftIO $ savePlots output [] [stackBar df]
+plotAlignQC :: [(String, Double, Double)]
+            -> Maybe EChart
+plotAlignQC xs
+    | null xs = Nothing
+    | otherwise = Just $ addAttr options $ addAttr toolbox plt 
   where
+    plt = (bar df){_height=480,_width=w}
+    w = max 480 $ fromIntegral (length xs) * 30 + 40
+    options = [jmacroE| { grid: {top: 60} } |]
     df = DF.mkDataFrame ["percent mapped reads", "percent chrM reads"] names $
         [p, chrM]
     (names, p, chrM) = unzip3 $
@@ -56,16 +67,14 @@ alignStat e = do
   where
     nm = printf "%s_rep%d" (T.unpack $ e^.eid) (e^.replicates._1)
 
-dupRate :: ATACSeqConfig config
-        => [ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))]
-        -> ReaderT config IO ()
-dupRate input
-    | null input = return ()
-    | otherwise = do
-        dir <- qcDir
-        let output = dir <> "/qc_duplication_rate.html"
-        liftIO $ savePlots output [] [stackBar df]
+plotDupRate :: [ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))]
+            -> Maybe EChart
+plotDupRate [] = Nothing
+plotDupRate input = Just $ addAttr options $ addAttr toolbox plt 
   where
+    plt = (stackBar df){_height=480,_width=w}
+    w = max 480 $ fromIntegral (length input) * 20 + 40
+    options = [jmacroE| { grid: {top: 60} }|]
     df = DF.mkDataFrame ["duplication_rate"] names [dat]
     (names, dat) = unzip $ mapMaybe getDupRate input
     getDupRate e = case either getResult getResult (e^.replicates._2.files) of
@@ -102,29 +111,24 @@ peakSignal (atac, peakFl) = do
           , BED (x^.chrom) (x^.chromEnd - 1) (x^.chromEnd) (x^.name) Nothing (Just False) ]
 
 -- | Compute correlation between experiments.
-peakCor :: ATACSeqConfig config
-        => [ATACSeq S (File '[] 'Other)]
-        -> ReaderT config IO ()
-peakCor [] = return ()
-peakCor inputs = do
-    dir <- qcDir
-    let output = dir <> "/qc_correlation.html"
-        names = flip map inputs $ \x ->
+plotPeakCor :: [ATACSeq S (File '[] 'Other)] -> IO (Maybe EChart)
+plotPeakCor [] = return Nothing
+plotPeakCor inputs = do
+    let names = flip map inputs $ \x ->
             (x^.eid) <> "_rep" <> T.pack (show $ x^.replicates._1)
-    liftIO $ do
-        cor <- fmap (pearsonMatByRow . fromRows) $ forM inputs $ \input ->
-            decodeFile $ input^.replicates._2.files.location
-        savePlots output [] $ [heatmap $ DF.mkDataFrame names names $ toRowLists cor]
+    cor <- fmap (pearsonMatByRow . fromRows) $ forM inputs $ \input ->
+        decodeFile $ input^.replicates._2.files.location
+    let plt = heatmap $ DF.orderDataFrame id $
+            DF.mkDataFrame names names $ toRowLists cor
+    return $ Just $ addAttr (title "Pearson correlation") $ addAttr toolbox plt
 
-teQC :: ATACSeqConfig config => [(T.Text, U.Vector Double)] -> ReaderT config IO ()
-teQC [] = return ()
-teQC xs = do
-    dir <- qcDir
-    let output = dir <> "/qc_tss_enrichment.html"
-    liftIO $ savePlots output [] [p1,p2]
+plotTE :: [(T.Text, U.Vector Double)] -> [EChart]
+plotTE [] = []
+plotTE xs = [p1{_width=w,_height=480}, p2{_width=480,_height=480}]
   where
     p1 = stackBar $ DF.mkDataFrame ["TSS Enrichment"] names [map U.maximum vals]
-    p2 = stackLine $ DF.mkDataFrame names (map (T.pack . show) [-2000..2000::Int]) $
+    w = max 480 $ fromIntegral (length xs) * 30 + 40
+    p2 = line $ DF.mkDataFrame names (map (T.pack . show) [-2000..2000::Int]) $
         map U.toList vals
     (names, vals) = unzip xs
 
@@ -197,18 +201,11 @@ tssEnrichment tss = mapC getCutSite .| intersectBedWith f regions .| sink
         BED chr (x - 2000) (x + 2000) Nothing Nothing $ Just str ) tss
 
 -- | Plot QC for fragment size distribution.
-fragDistrQC :: ATACSeqConfig config 
-            => [Maybe (T.Text, U.Vector Double)]
-            -> ReaderT config IO ()
-fragDistrQC [] = return ()
-fragDistrQC xs = do
-    dir <- qcDir
-    let output = dir <> "fragment_size_distr.html"
-    liftIO $ savePlots output [] plts
+plotFragDistr :: [Maybe (T.Text, U.Vector Double)] -> [EChart]
+plotFragDistr xs = flip map (catMaybes xs) $ \(nm, dat) -> 
+    let df = DF.mkDataFrame ["fraction"] labels [U.toList dat]
+    in addAttr (title (T.unpack nm)) (stackLine df){_width=400, _height=480}
   where
-    plts = flip map (catMaybes xs) $ \(nm, dat) -> 
-        let df = DF.mkDataFrame ["fragment_count"] labels [U.toList dat]
-        in addAttr (title (T.unpack nm)) $ stackLine df
     labels = map (T.pack . show) [0..1000 :: Int]
 
 -- | Compute fragment size distribution.

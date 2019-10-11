@@ -54,6 +54,7 @@ library
                      , temporary
                      , transformers-base
                      , singletons >= 2.5
+                     , jmacro
                      , split
                      , shelly
                      , statistics >= 0.15.0.0

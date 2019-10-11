@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TemplateHaskell   #-}
 module Taiji.Pipeline.ATACSeq (builder) where
 
@@ -16,6 +17,7 @@ import qualified Data.Text                             as T
 import           Taiji.Pipeline.ATACSeq.Types
 import           Taiji.Pipeline.ATACSeq.Functions
 import           Taiji.Prelude
+import           Taiji.Utils.Plot
 
 builder :: Builder ()
 builder = do
@@ -25,7 +27,7 @@ builder = do
             then readATACSeqTSV input "ATAC-seq"
             else readATACSeq input "ATAC-seq"
         |] $ doc .= "Read ATAC-seq data information from input file."
-    node "Download_Data" 'atacDownloadData $ doc .= "Download data."
+    nodePar "Download_Data" 'atacDownloadData $ doc .= "Download data."
     node "Get_Fastq" [| return . atacGetFastq |] $ return ()
 
     path ["Read_Input", "Download_Data", "Get_Fastq"]
@@ -84,6 +86,11 @@ builder = do
         |] $ return ()
     ["Download_Data", "Call_Peak"] ~> "Get_Peak"
 
+    node "Merge_Peaks" 'atacMergePeaks $ do
+        doc .= "Merge peaks called from different samples together to form " <>
+            "a non-overlapping set of open chromatin regions."
+    path ["Get_Peak", "Merge_Peaks"]
+
     nodePar "Gene_Count" 'estimateExpr $ return ()
     node "Make_Expr_Table" 'mkTable $ return ()
     path ["Merge_Bed", "Gene_Count", "Make_Expr_Table"]
@@ -93,37 +100,40 @@ builder = do
 -- Quality control
 -------------------------------------------------------------------------------
     nodePar "Align_Stat" [| liftIO . alignStat |] $ return ()
-    node "QC_Align" 'alignQC $ return ()
-    path ["Align", "Align_Stat", "QC_Align"]
-
-    node "QC_Duplication" 'dupRate $ return ()
-    ["Remove_Duplicates"] ~> "QC_Duplication"
+    path ["Align", "Align_Stat"]
 
     nodePar "Fragment_Size_Distr" [| liftIO . fragDistr |] $ return ()
-    node "QC_Fragment_Size" 'fragDistrQC $ return ()
-    path ["Remove_Duplicates", "Fragment_Size_Distr", "QC_Fragment_Size"]
+    path ["Remove_Duplicates", "Fragment_Size_Distr"]
 
     node "Compute_TE_Prep" [| return . concatMap split |] $ return ()
     nodePar "Compute_TE" 'computeTE $ return ()
-    node "QC_TE" 'teQC $ return ()
-    path ["Get_Bed", "Compute_TE_Prep", "Compute_TE", "QC_TE"]
-
-
-    node "Merge_Peaks" 'atacMergePeaks $ do
-        doc .= "Merge peaks called from different samples together to form " <>
-            "a non-overlapping set of open chromatin regions."
+    path ["Get_Bed", "Compute_TE_Prep", "Compute_TE"]
 
     node "Compute_Peak_Signal_Prep" [| \(xs, y) -> return $
         zip (concatMap split xs) $ repeat $ fromJust y|] $ return ()
     nodePar "Compute_Peak_Signal" 'peakSignal $ return ()
-    node "Compute_Peak_Cor" 'peakCor $ return ()
-    path ["Get_Peak", "Merge_Peaks"]
     ["Get_Bed", "Merge_Peaks"] ~> "Compute_Peak_Signal_Prep"
-    path ["Compute_Peak_Signal_Prep", "Compute_Peak_Signal", "Compute_Peak_Cor"]
+    path ["Compute_Peak_Signal_Prep", "Compute_Peak_Signal"]
 
-    node "Find_TFBS_Prep" [| \region -> getMotif >>= liftIO . readMEME >>=
-        return . zip (repeat region) . chunksOf 100
-        |] $ doc .= "Prepare for parallel execution."
+    node "QC" [| \(ali, dup, frag, te, cor) -> do
+        dir <- qcDir
+        cor' <- liftIO $ plotPeakCor cor
+        let output = dir <> "/qc.html"
+            plts = catMaybes [plotAlignQC ali, plotDupRate dup, cor'] ++
+                plotFragDistr frag ++ plotTE te
+        liftIO $ savePlots output [] plts
+        |] $ doc .= "Generating QC plots."
+    [ "Align_Stat", "Remove_Duplicates", "Fragment_Size_Distr"
+        , "Compute_TE", "Compute_Peak_Signal" ] ~> "QC"
+
+
+    node "Find_TFBS_Prep" [| \case
+        Nothing -> return []
+        Just pk -> do
+            _ <- getGenomeIndex 
+            getMotif >>= liftIO . readMEME >>=
+                return . zip (repeat pk) . chunksOf 100
+        |] $ return ()
     nodePar "Find_TFBS_Union" [| \x -> atacFindMotifSiteAll 5e-5 x |] $ do
         doc .= "Identify TF binding sites in open chromatin regions using " <>
             "the FIMO's motif scanning algorithm. " <>

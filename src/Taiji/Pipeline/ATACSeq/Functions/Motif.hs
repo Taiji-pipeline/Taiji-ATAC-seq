@@ -20,10 +20,6 @@ import           Bio.Pipeline.Utils
 import           Bio.Seq.IO
 import           Data.Default
 import qualified Data.Text                     as T
-import           Shelly                        (fromText, mkdir_p, shelly,
-                                                test_f)
-import           System.FilePath               (takeDirectory)
-import           System.IO
 import           System.IO.Temp                (emptyTempFile)
 
 import           Taiji.Pipeline.ATACSeq.Types
@@ -46,23 +42,10 @@ atacMergePeaks input
 
 atacFindMotifSiteAll :: ATACSeqConfig config
                      => Double     -- ^ p value
-                     -> (Maybe (File '[] 'Bed), [Motif])
-                     -> ReaderT config IO (Maybe (File '[] 'Bed))
-atacFindMotifSiteAll _ (Nothing, _) = return Nothing
-atacFindMotifSiteAll p (Just openChromatin, motifs) = do
-    -- Generate sequence index
-    genome <- asks ( fromMaybe (error "Genome fasta file was not specified!") .
-        _atacseq_genome_fasta )
-    seqIndex <- asks ( fromMaybe (error "Genome index file was not specified!") .
-        _atacseq_genome_index )
-    fileExist <- liftIO $ shelly $ test_f $ fromText $ T.pack seqIndex
-    liftIO $ if fileExist
-        then hPutStrLn stderr "Sequence index exists. Skipped."
-        else do
-            shelly $ mkdir_p $ fromText $ T.pack $ takeDirectory seqIndex
-            hPutStrLn stderr "Generating sequence index"
-            mkIndex [genome] seqIndex
-
+                     -> (File '[] 'Bed, [Motif])
+                     -> ReaderT config IO (File '[] 'Bed)
+atacFindMotifSiteAll p (openChromatin, motifs) = do
+    seqIndex <- getGenomeIndex 
     dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/TFBS/"))
     liftIO $ withGenome seqIndex $ \g -> do
         output <- emptyTempFile dir "motif_sites_part.bed"
@@ -70,12 +53,12 @@ atacFindMotifSiteAll p (Just openChromatin, motifs) = do
         runResourceT $ runConduit $
             (streamBed (openChromatin^.location) :: _ _ BED3 _ _) .|
             scanMotif g motifs' .| sinkFileBed output
-        return $ Just $ location .~ output $ emptyFile
+        return $ location .~ output $ emptyFile
 
 -- | Retrieve TFBS for each experiment
 atacGetMotifSite :: ATACSeqConfig config
                  => Int -- ^ region around summit
-                 -> ([Maybe (File '[] 'Bed)], ATACSeq S (File '[] 'NarrowPeak))
+                 -> ([File '[] 'Bed], ATACSeq S (File '[] 'NarrowPeak))
                  -> ReaderT config IO (ATACSeq S (File '[] 'Bed))
 atacGetMotifSite window (tfbs, e) = do
     dir <- asks ((<> "/TFBS") . _atacseq_output_dir) >>= getPath
@@ -85,7 +68,7 @@ atacGetMotifSite window (tfbs, e) = do
         peaks <- runResourceT $ runConduit $
             streamBed (fl^.location) .| mapC getSummit .| sinkList
         runResourceT $ runConduit $
-            (mapM_ (streamBed . (^.location)) $ catMaybes tfbs :: _ _ BED _ _) .|
+            (mapM_ (streamBed . (^.location)) tfbs :: _ _ BED _ _) .|
             intersectBed peaks .| sinkFileBed output
         return $ location .~ output $ emptyFile
         )

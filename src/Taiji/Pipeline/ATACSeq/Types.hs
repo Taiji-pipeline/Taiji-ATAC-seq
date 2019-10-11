@@ -6,6 +6,8 @@ import Bio.Pipeline.Utils (Directory)
 import Bio.Pipeline.CallPeaks (CallPeakOpts)
 import qualified Data.Text as T
 import Shelly hiding (FilePath)
+import           System.FilePath               (takeDirectory)
+import           Bio.Seq.IO
 
 import Taiji.Prelude
 
@@ -61,3 +63,17 @@ getMotif = asks _atacseq_motif_file >>= \case
                Just assembly -> do
                    liftIO $ fetchMotif motif assembly
                    return motif
+
+getGenomeIndex :: ATACSeqConfig config => ReaderT config IO FilePath
+getGenomeIndex = do
+    seqIndex <- asks ( fromMaybe (error "Genome index file was not specified!") .
+        _atacseq_genome_index )
+    genome <- asks ( fromMaybe (error "Genome fasta file was not specified!") .
+        _atacseq_genome_fasta )
+    shelly $ do
+        fileExist <- test_f $ fromText $ T.pack seqIndex
+        unless fileExist $ do
+            mkdir_p $ fromText $ T.pack $ takeDirectory seqIndex
+            liftIO $ mkIndex [genome] seqIndex
+    return seqIndex
+{-# INLINE getGenomeIndex #-}

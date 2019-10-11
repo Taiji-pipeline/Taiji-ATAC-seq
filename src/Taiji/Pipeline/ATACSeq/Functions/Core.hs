@@ -42,9 +42,9 @@ atacMkIndex input
         return ()
 
 atacDownloadData :: ATACSeqConfig config
-                 => [ATACSeqWithSomeFile]
-                 -> ReaderT config IO [ATACSeqWithSomeFile]
-atacDownloadData dat = dat & traverse.replicates.traverse.files.traverse %%~
+                 => ATACSeqWithSomeFile
+                 -> ReaderT config IO ATACSeqWithSomeFile
+atacDownloadData dat = dat & replicates.traverse.files.traverse %%~
     (\fl -> do
         dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/Download"))
         liftIO $ downloadFiles dir fl )
