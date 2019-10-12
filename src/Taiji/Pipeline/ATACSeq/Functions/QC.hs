@@ -42,12 +42,12 @@ plotAlignQC :: [(String, Double, Double)]
             -> Maybe EChart
 plotAlignQC xs
     | null xs = Nothing
-    | otherwise = Just $ addAttr options $ addAttr toolbox plt 
+    | otherwise = Just $ yAxisLabel "Percent" >+> options >+> toolbox >+> plt 
   where
     plt = (bar df){_height=480,_width=w}
     w = max 480 $ fromIntegral (length xs) * 30 + 40
     options = [jmacroE| { grid: {top: 60} } |]
-    df = DF.mkDataFrame ["percent mapped reads", "percent chrM reads"] names $
+    df = DF.mkDataFrame ["mappable", "chrM"] names $
         [p, chrM]
     (names, p, chrM) = unzip3 $
         map (\(a,b,c) -> (T.pack a, 100*b, 100*c)) xs
@@ -68,14 +68,16 @@ alignStat e = do
     nm = printf "%s_rep%d" (T.unpack $ e^.eid) (e^.replicates._1)
 
 plotDupRate :: [ATACSeq S (Either (File tags1 'Bam) (File tags2 'Bam))]
-            -> Maybe EChart
-plotDupRate [] = Nothing
-plotDupRate input = Just $ addAttr options $ addAttr toolbox plt 
+            -> [EChart]
+plotDupRate [] = []
+plotDupRate input =
+    [ yAxisLabel "Usable reads (Million)" >+> options >+> toolbox >+> (bar totalReads){_height=480,_width=w}
+    , yAxisLabel "Percent duplicated" >+> options >+> toolbox >+> (bar dupRate){_height=480,_width=w}
+    ]
   where
-    plt = (stackBar df){_height=480,_width=w}
     w = max 480 $ fromIntegral (length input) * 20 + 40
     options = [jmacroE| { grid: {top: 60} }|]
-    df = DF.mkDataFrame ["duplication_rate"] names [dat]
+    (dupRate, totalReads) = DF.unzip $ DF.mkDataFrame [""] names [dat]
     (names, dat) = unzip $ mapMaybe getDupRate input
     getDupRate e = case either getResult getResult (e^.replicates._2.files) of
         Nothing -> Nothing
@@ -86,7 +88,7 @@ plotDupRate input = Just $ addAttr options $ addAttr toolbox plt
         Just txt -> let xs = T.lines txt
                         dup = read $ T.unpack $ last $ T.words $ last xs
                         total = read $ T.unpack $ (T.words $ head xs) !! 1
-                    in Just $ 100 * dup / total
+                    in Just $ (100 * dup / total, total / 1000000)
 
 peakSignal :: ATACSeqConfig config
            => ( ATACSeq S (Either (File '[Gzip] 'Bed) (File '[PairedEnd, Gzip] 'Bed))
@@ -126,9 +128,11 @@ plotTE :: [(T.Text, U.Vector Double)] -> [EChart]
 plotTE [] = []
 plotTE xs = [p1{_width=w,_height=480}, p2{_width=480,_height=480}]
   where
-    p1 = stackBar $ DF.mkDataFrame ["TSS Enrichment"] names [map U.maximum vals]
+    p1 = addAttr toolbox $ addAttr (yAxisLabel "TSS Enrichment") $ stackBar $
+        DF.mkDataFrame [""] names [map U.maximum vals]
     w = max 480 $ fromIntegral (length xs) * 30 + 40
-    p2 = line $ DF.mkDataFrame names (map (T.pack . show) [-2000..2000::Int]) $
+    p2 = addAttr toolbox $ addAttr (yAxisLabel "TSS Enrichment") $ 
+        line $ DF.mkDataFrame names (map (T.pack . show) [-2000..2000::Int]) $
         map U.toList vals
     (names, vals) = unzip xs
 
@@ -204,7 +208,8 @@ tssEnrichment tss = mapC getCutSite .| intersectBedWith f regions .| sink
 plotFragDistr :: [Maybe (T.Text, U.Vector Double)] -> [EChart]
 plotFragDistr xs = flip map (catMaybes xs) $ \(nm, dat) -> 
     let df = DF.mkDataFrame ["fraction"] labels [U.toList dat]
-    in addAttr (title (T.unpack nm)) (stackLine df){_width=400, _height=480}
+    in addAttr (yAxisLabel "Fraction") $
+        addAttr (title (T.unpack nm)) (stackLine df){_width=400, _height=480}
   where
     labels = map (T.pack . show) [0..1000 :: Int]
 

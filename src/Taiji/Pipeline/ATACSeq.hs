@@ -8,6 +8,7 @@ import           Bio.Motif                              (readMEME)
 import           Bio.Data.Experiment.Parser
 import           Bio.Pipeline.NGS.Utils
 import           Bio.Pipeline.Utils
+import Bio.Seq.IO (withGenome, getChrSizes)
 import           Data.List.Split                        (chunksOf)
 import qualified Data.HashSet as S
 import           Control.Workflow
@@ -70,8 +71,20 @@ builder = do
         |] $ return ()
     path ["Get_Bam", "Filter_Bam", "Remove_Duplicates", "Bam_To_Bed"]
     ["Download_Data", "Bam_To_Bed"] ~> "Get_Bed"
+
     nodePar "Merge_Bed" 'atacConcatBed $ return ()
-    path ["Get_Bed", "Merge_Bed"]
+
+    nodePar "Make_BigWig" [| \input -> do
+        dir <- asks _atacseq_output_dir >>= getPath . (<> "/BigWig/")
+        seqIndex <- getGenomeIndex
+        let output = printf "%s/%s_rep%d.bw" dir (T.unpack $ input^.eid)
+                (input^.replicates._1)
+        liftIO $ do
+            chrSize <- withGenome seqIndex $ return . getChrSizes
+            bedToBigWig output chrSize $ input^.replicates._2.files
+        |] $ return ()
+
+    path ["Get_Bed", "Merge_Bed", "Make_BigWig"]
 
     node "Call_Peak_Prep" [| \(beds, inputs) -> do
         let ids = S.fromList $ map (^.eid) $ atacGetNarrowPeak inputs
@@ -119,7 +132,7 @@ builder = do
         dir <- qcDir
         cor' <- liftIO $ plotPeakCor cor
         let output = dir <> "/qc.html"
-            plts = catMaybes [plotAlignQC ali, plotDupRate dup, cor'] ++
+            plts = plotDupRate dup ++ catMaybes [plotAlignQC ali, cor'] ++
                 plotFragDistr frag ++ plotTE te
         liftIO $ savePlots output [] plts
         |] $ doc .= "Generating QC plots."
