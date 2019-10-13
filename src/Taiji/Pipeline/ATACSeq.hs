@@ -29,7 +29,7 @@ builder = do
             else readATACSeq input "ATAC-seq"
         |] $ doc .= "Read ATAC-seq data information from input file."
     nodePar "Download_Data" 'atacDownloadData $ doc .= "Download data."
-    node "Get_Fastq" [| return . atacGetFastq |] $ return ()
+    node "Get_Fastq" [| return . atacGetFastq |] $ doc .= "Extract Fastq files."
 
     path ["Read_Input", "Download_Data", "Get_Fastq"]
 
@@ -37,14 +37,14 @@ builder = do
     node "Align_Prep" [| return . fst |] $ return ()
     nodePar "Align" 'atacAlign $ do
         nCore .= 4
-        doc .= "Read alignment using BWA. The default parameters are: " <>
-            "bwa mem -M -k 32."
+        doc .= "Align reads using BWA: bwa mem -M -k 32."
 
     ["Get_Fastq"] ~> "Make_Index"
     ["Get_Fastq", "Make_Index"] ~> "Align_Prep"
     ["Align_Prep"] ~> "Align"
 
-    node "Get_Bam" [| \(x,y) -> return $ atacGetBam x ++ y |] $ return ()
+    node "Get_Bam" [| \(x,y) -> return $ atacGetBam x ++ y |] $
+        doc .= "Extract Bam files."
 
     ["Download_Data", "Align"] ~> "Get_Bam"
 
@@ -58,7 +58,7 @@ builder = do
         input & replicates.traverse.files %%~ liftIO . either
             (fmap Left . removeDuplicates output)
             (fmap Right . removeDuplicates output)
-        |] $ doc .= "Remove duplicated reads using picard."
+        |] $ doc .= "Remove PCR duplicates."
 
     nodePar "Bam_To_Bed" 'atacBamToBed $ do
         doc .= "Convert Bam file to Bed file."
@@ -68,11 +68,12 @@ builder = do
             f _   = error "Must contain exactly 1 file"
         in return $ mapped.replicates.mapped.files %~ f $ mergeExp $ atacGetBed input1 ++
             (input2 & mapped.replicates.mapped.files %~ Left)
-        |] $ return ()
+        |] $ doc .= "Extract Bed files."
     path ["Get_Bam", "Filter_Bam", "Remove_Duplicates", "Bam_To_Bed"]
     ["Download_Data", "Bam_To_Bed"] ~> "Get_Bed"
 
-    nodePar "Merge_Bed" 'atacConcatBed $ return ()
+    nodePar "Merge_Bed" 'atacConcatBed $
+        doc .= "Merge Bed files from different replicates"
 
     nodePar "Make_BigWig" [| \input -> do
         dir <- asks _atacseq_output_dir >>= getPath . (<> "/BigWig/")
@@ -82,7 +83,7 @@ builder = do
         liftIO $ do
             chrSize <- withGenome seqIndex $ return . getChrSizes
             bedToBigWig output chrSize $ input^.replicates._2.files
-        |] $ return ()
+        |] $ doc .= "Generate Bigwig files."
 
     path ["Get_Bed", "Merge_Bed", "Make_BigWig"]
 
@@ -91,7 +92,7 @@ builder = do
         return $ filter (\x -> not $ S.member (x^.eid) ids) beds
         |] $ return ()
     ["Merge_Bed", "Download_Data"] ~> "Call_Peak_Prep"
-    nodePar "Call_Peak" 'atacCallPeak $ return ()
+    nodePar "Call_Peak" 'atacCallPeak $ doc .= "Call peaks using MACS2."
     path ["Call_Peak_Prep", "Call_Peak"]
 
     node "Get_Peak" [| \(input1, input2) -> return $
@@ -104,7 +105,8 @@ builder = do
             "a non-overlapping set of open chromatin regions."
     path ["Get_Peak", "Merge_Peaks"]
 
-    nodePar "Gene_Count" 'estimateExpr $ return ()
+    nodePar "Gene_Count" 'estimateExpr $
+        doc .= "Estimate gene expression using promoter accessibility."
     node "Make_Expr_Table" 'mkTable $ return ()
     path ["Merge_Bed", "Gene_Count", "Make_Expr_Table"]
 
@@ -119,7 +121,7 @@ builder = do
     path ["Remove_Duplicates", "Fragment_Size_Distr"]
 
     node "Compute_TE_Prep" [| return . concatMap split |] $ return ()
-    nodePar "Compute_TE" 'computeTE $ return ()
+    nodePar "Compute_TE" 'computeTE $ doc .= "Compute TSS enrichment."
     path ["Get_Bed", "Compute_TE_Prep", "Compute_TE"]
 
     node "Compute_Peak_Signal_Prep" [| \(xs, y) -> return $
@@ -150,7 +152,7 @@ builder = do
     nodePar "Find_TFBS_Union" [| \x -> atacFindMotifSiteAll 5e-5 x |] $ do
         doc .= "Identify TF binding sites in open chromatin regions using " <>
             "the FIMO's motif scanning algorithm. " <>
-            "Use 1e-5 as the default p-value cutoff."
+            "Use 5e-5 as the default p-value cutoff."
 
     node "Get_TFBS_Prep" [| \(x,y) -> return $ zip (repeat x) y|] $ return ()
 
