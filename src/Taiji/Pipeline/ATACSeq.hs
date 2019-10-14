@@ -131,12 +131,14 @@ builder = do
     path ["Compute_Peak_Signal_Prep", "Compute_Peak_Signal"]
 
     node "QC" [| \(ali, dup, frag, te, cor) -> do
-        dir <- qcDir
         cor' <- liftIO $ plotPeakCor cor
-        let output = dir <> "/qc.html"
-            plts = plotDupRate dup ++ catMaybes [plotAlignQC ali, cor'] ++
+        let plts = plotDupRate dup ++ catMaybes [plotAlignQC ali, cor'] ++
                 plotFragDistr frag ++ plotTE te
-        liftIO $ savePlots output [] plts
+        if null plts
+            then return ()
+            else do
+                dir <- qcDir
+                liftIO $ savePlots (dir <> "/qc.html") [] plts
         |] $ doc .= "Generating QC plots."
     [ "Align_Stat", "Remove_Duplicates", "Fragment_Size_Distr"
         , "Compute_TE", "Compute_Peak_Signal" ] ~> "QC"
