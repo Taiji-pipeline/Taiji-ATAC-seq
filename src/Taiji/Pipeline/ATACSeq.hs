@@ -63,11 +63,14 @@ builder = do
     nodePar "Bam_To_Bed" 'atacBamToBed $ do
         doc .= "Convert Bam file to Bed file."
 
-    node "Get_Bed" [| \(input1, input2) ->
+    node "Get_Bed" [| \(input1, input2) -> do
         let f [x] = x
             f _   = error "Must contain exactly 1 file"
-        in return $ mapped.replicates.mapped.files %~ f $ mergeExp $ atacGetBed input1 ++
-            (input2 & mapped.replicates.mapped.files %~ Left)
+            res = mapped.replicates.mapped.files %~ f $ mergeExp $
+                atacGetBed input1 ++
+                (input2 & mapped.replicates.mapped.files %~ Left)
+        unless (null res) $ getGenomeIndex >> return ()
+        return res
         |] $ doc .= "Extract Bed files."
     path ["Get_Bam", "Filter_Bam", "Remove_Duplicates", "Bam_To_Bed"]
     ["Download_Data", "Bam_To_Bed"] ~> "Get_Bed"

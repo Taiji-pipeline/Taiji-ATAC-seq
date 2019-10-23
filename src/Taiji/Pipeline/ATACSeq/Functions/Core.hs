@@ -133,7 +133,7 @@ atacCallPeak :: (ATACSeqConfig config, SingI tags)
              -> ReaderT config IO (ATACSeq S (File '[] 'NarrowPeak))
 atacCallPeak input = do
     dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/Peaks"))
-    opts <- asks _atacseq_callpeak_opts
+    opts <- getCallPeakOpt
     let output = printf "%s/%s_rep%d.narrowPeak" dir (T.unpack $ input^.eid)
             (input^.replicates._1)
     input & replicates.traverse.files %%~ liftIO .

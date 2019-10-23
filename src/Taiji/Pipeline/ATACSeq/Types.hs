@@ -68,12 +68,22 @@ getGenomeIndex :: ATACSeqConfig config => ReaderT config IO FilePath
 getGenomeIndex = do
     seqIndex <- asks ( fromMaybe (error "Genome index file was not specified!") .
         _atacseq_genome_index )
-    genome <- asks ( fromMaybe (error "Genome fasta file was not specified!") .
-        _atacseq_genome_fasta )
-    shelly $ do
-        fileExist <- test_f $ fromText $ T.pack seqIndex
-        unless fileExist $ do
-            mkdir_p $ fromText $ T.pack $ takeDirectory seqIndex
-            liftIO $ mkIndex [genome] seqIndex
+    fileExist <- shelly $ test_f $ fromText $ T.pack seqIndex
+    unless fileExist $ do
+        genome <- getGenomeFasta
+        shelly $ mkdir_p $ fromText $ T.pack $ takeDirectory seqIndex
+        liftIO $ mkIndex [genome] seqIndex
     return seqIndex
 {-# INLINE getGenomeIndex #-}
+
+getCallPeakOpt :: ATACSeqConfig config => ReaderT config IO CallPeakOpts
+getCallPeakOpt = do
+    opt <- asks _atacseq_callpeak_opts 
+    s <- case opt^.gSize of
+        Nothing -> do
+            idx <- getGenomeIndex
+            s <- liftIO $ fmap fromIntegral $ withGenome idx $
+                return . foldl1' (+) . map snd . getChrSizes
+            return $ Just $ show (truncate $ 0.9 * (s :: Double) :: Int)
+        x -> return x
+    return $ gSize .~ s $ opt
