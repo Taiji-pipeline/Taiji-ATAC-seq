@@ -24,7 +24,6 @@ import           Data.Coerce                   (coerce)
 import           Data.Either                   (lefts)
 import           Data.Singletons               (SingI)
 import qualified Data.Text                     as T
-import           System.IO.Temp                (withTempFile)
 
 import           Taiji.Pipeline.ATACSeq.Types
 import           Taiji.Prelude
@@ -101,11 +100,8 @@ atacFilterBamSort input = do
     let output = printf "%s/%s_rep%d_filt.bam" dir (T.unpack $ input^.eid)
             (input^.replicates._1)
     input & replicates.traverse.files %%~ liftIO . either
-        (fmap Left . fun output)
-        (fmap Right . fun output)
-  where
-    fun output x = withTempFile "./" "tmp_file." $ \f _ ->
-        filterBam "./" f x >>= sortBam "./" output
+        (fmap Left . filterBamSort "./" output)
+        (fmap Right . filterBamSort "./" output)
 
 atacGetBed :: [ATACSeqWithSomeFile]
            -> [ATACSeq S (Either (File '[Gzip] 'Bed) (File '[PairedEnd, Gzip] 'Bed))]
