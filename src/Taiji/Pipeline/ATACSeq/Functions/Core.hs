@@ -97,11 +97,12 @@ atacFilterBamSort :: ATACSeqConfig config
         (Either (File '[CoordinateSorted] 'Bam) (File '[CoordinateSorted, PairedEnd] 'Bam)) )
 atacFilterBamSort input = do
     dir <- asks ((<> "/Bam") . _atacseq_output_dir) >>= getPath
+    tmpDir <- fromMaybe "./" <$> asks _atacseq_tmp_dir
     let output = printf "%s/%s_rep%d_filt.bam" dir (T.unpack $ input^.eid)
             (input^.replicates._1)
     input & replicates.traverse.files %%~ liftIO . either
-        (fmap Left . filterBamSort "./" output)
-        (fmap Right . filterBamSort "./" output)
+        (fmap Left . filterBamSort tmpDir output)
+        (fmap Right . filterBamSort tmpDir output)
 
 atacGetBed :: [ATACSeqWithSomeFile]
            -> [ATACSeq S (Either (File '[Gzip] 'Bed) (File '[PairedEnd, Gzip] 'Bed))]
