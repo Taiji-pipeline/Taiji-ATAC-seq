@@ -10,7 +10,7 @@ module Taiji.Pipeline.ATACSeq.Functions.Motif
 
 import           Bio.Data.Bed                  (BED, BED3, BEDLike (..),
                                                 intersectBed, mergeBed,
-                                                npPeak, streamBed,
+                                                npPeak, streamBed, writeBed,
                                                 readBed, sinkFileBed)
 import           Bio.Data.Bed.Utils  (scanMotif, mkCutoffMotif)
 import           Bio.Data.Experiment
@@ -25,20 +25,23 @@ import           System.IO.Temp                (emptyTempFile)
 import           Taiji.Pipeline.ATACSeq.Types
 import           Taiji.Prelude
 
+-- | Merge overlapping peaks.
 atacMergePeaks :: ATACSeqConfig config
                => [ATACSeq S (File '[] 'NarrowPeak)]
                -> ReaderT config IO (Maybe (File '[] 'Bed))
-atacMergePeaks input
-    | null input = return Nothing
-    | otherwise = do
-        dir <- asks _atacseq_output_dir >>= getPath
-        let fls = input^..folded.replicates.folded.files
-            openChromatin = dir ++ "/openChromatin.bed"
-        liftIO $ do
-            peaks <- mapM (readBed . (^.location)) fls :: IO [[BED3]]
-            runResourceT $ runConduit $
-                mergeBed (concat peaks) .| sinkFileBed openChromatin
-            return $ Just $ location .~ openChromatin $ emptyFile
+atacMergePeaks [] = return Nothing
+atacMergePeaks input = do
+    dir <- asks _atacseq_output_dir >>= getPath
+    let output = dir ++ "/openChromatin.bed"
+    liftIO $ do
+        openChromatin <- foldM f [] $
+            input^..folded.replicates.folded.files.location
+        writeBed output openChromatin
+        return $ Just $ location .~ output $ emptyFile
+  where
+    f acc fl = do
+        peaks <- readBed fl :: IO [BED3]
+        runResourceT $ runConduit $ mergeBed (acc ++ peaks) .| sinkList
 
 atacFindMotifSiteAll :: ATACSeqConfig config
                      => Double     -- ^ p value
