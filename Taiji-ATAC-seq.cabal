@@ -1,12 +1,10 @@
 name:                Taiji-ATAC-seq
-version:             0.2.0
--- synopsis:
--- description:
+version:             0.2.1
 license:             BSD3
 license-file:        LICENSE
 author:              Kai Zhang
 maintainer:          kai@kzhang.org
-copyright:           (c) 2017-2019 Kai Zhang
+copyright:           (c) 2017-2020 Kai Zhang
 category:            Bio
 build-type:          Simple
 extra-source-files:  README.md
@@ -49,7 +47,7 @@ library
                      , filepath
                      , HsHTSLib >= 1.9.2.1
                      , mtl
-                     , SciFlow >= 0.7.1
+                     , SciFlow >= 0.7.2
                      , text
                      , temporary
                      , transformers-base

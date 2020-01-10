@@ -29,12 +29,12 @@ builder = do
             else readATACSeq input "ATAC-seq"
         |] $ doc .= "Read ATAC-seq data information from input file."
     nodePar "Download_Data" 'atacDownloadData $ doc .= "Download data."
-    node "Get_Fastq" [| return . atacGetFastq |] $ doc .= "Extract Fastq files."
+    uNode "Get_Fastq" 'atacGetFastq
 
     path ["Read_Input", "Download_Data", "Get_Fastq"]
 
     node "Make_Index" 'atacMkIndex $ doc .= "Generate the BWA index."
-    node "Align_Prep" [| return . fst |] $ return ()
+    uNode "Align_Prep" 'fst
     nodePar "Align" 'atacAlign $ do
         nCore .= 4
         doc .= "Align reads using BWA: bwa mem -M -k 32."
@@ -43,9 +43,7 @@ builder = do
     ["Get_Fastq", "Make_Index"] ~> "Align_Prep"
     ["Align_Prep"] ~> "Align"
 
-    node "Get_Bam" [| \(x,y) -> return $ atacGetBam x ++ y |] $
-        doc .= "Extract Bam files."
-
+    uNode "Get_Bam" [| \(x,y) -> atacGetBam x ++ y |]
     ["Download_Data", "Align"] ~> "Get_Bam"
 
     nodePar "Filter_Bam" 'atacFilterBamSort $ do
@@ -90,17 +88,15 @@ builder = do
 
     path ["Get_Bed", "Merge_Bed", "Make_BigWig"]
 
-    node "Call_Peak_Prep" [| \(beds, inputs) -> do
+    uNode "Call_Peak_Prep" [| \(beds, inputs) ->
         let ids = S.fromList $ map (^.eid) $ atacGetNarrowPeak inputs
-        return $ filter (\x -> not $ S.member (x^.eid) ids) beds
-        |] $ return ()
+        in filter (\x -> not $ S.member (x^.eid) ids) beds
+        |]
     ["Merge_Bed", "Download_Data"] ~> "Call_Peak_Prep"
     nodePar "Call_Peak" 'atacCallPeak $ doc .= "Call peaks using MACS2."
     path ["Call_Peak_Prep", "Call_Peak"]
 
-    node "Get_Peak" [| \(input1, input2) -> return $
-        atacGetNarrowPeak input1 ++ input2 
-        |] $ return ()
+    uNode "Get_Peak" [| \(input1, input2) -> atacGetNarrowPeak input1 ++ input2 |]
     ["Download_Data", "Call_Peak"] ~> "Get_Peak"
 
     node "Merge_Peaks" 'atacMergePeaks $ do
@@ -123,12 +119,12 @@ builder = do
     nodePar "Fragment_Size_Distr" [| liftIO . fragDistr |] $ return ()
     path ["Remove_Duplicates", "Fragment_Size_Distr"]
 
-    node "Compute_TE_Prep" [| return . concatMap split |] $ return ()
+    uNode "Compute_TE_Prep" [| concatMap split |]
     nodePar "Compute_TE" 'computeTE $ doc .= "Compute TSS enrichment."
     path ["Get_Bed", "Compute_TE_Prep", "Compute_TE"]
 
-    node "Compute_Peak_Signal_Prep" [| \(xs, y) -> return $
-        zip (concatMap split xs) $ repeat $ fromJust y|] $ return ()
+    uNode "Compute_Peak_Signal_Prep" [| \(xs, y) -> 
+        zip (concatMap split xs) $ repeat $ fromJust y|]
     nodePar "Compute_Peak_Signal" 'peakSignal $ return ()
     ["Get_Bed", "Merge_Peaks"] ~> "Compute_Peak_Signal_Prep"
     path ["Compute_Peak_Signal_Prep", "Compute_Peak_Signal"]
@@ -146,7 +142,6 @@ builder = do
     [ "Align_Stat", "Remove_Duplicates", "Fragment_Size_Distr"
         , "Compute_TE", "Compute_Peak_Signal" ] ~> "QC"
 
-
     node "Find_TFBS_Prep" [| \case
         Nothing -> return []
         Just pk -> do
@@ -159,7 +154,7 @@ builder = do
             "the FIMO's motif scanning algorithm. " <>
             "Use 5e-5 as the default p-value cutoff."
 
-    node "Get_TFBS_Prep" [| \(x,y) -> return $ zip (repeat x) y|] $ return ()
+    uNode "Get_TFBS_Prep" [| \(x,y) -> zip (repeat x) y|]
 
     nodePar "Get_TFBS" [| atacGetMotifSite 50 |] $ do
         doc .= "Retrieve motif binding sites for each sample."
