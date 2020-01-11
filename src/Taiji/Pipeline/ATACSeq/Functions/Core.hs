@@ -18,7 +18,6 @@ module Taiji.Pipeline.ATACSeq.Functions.Core
     ) where
 
 import           Bio.Data.Bed
-import           Bio.Pipeline
 import           Data.Bifunctor                (bimap)
 import           Data.Coerce                   (coerce)
 import           Data.Either                   (lefts)
@@ -30,16 +29,6 @@ import           Taiji.Prelude
 
 type ATACSeqWithSomeFile = ATACSeq N [Either SomeFile (SomeFile, SomeFile)]
 
-atacMkIndex :: ATACSeqConfig config => [a] -> ReaderT config IO ()
-atacMkIndex input
-    | null input = return ()
-    | otherwise = do
-        genome <- getGenomeFasta
-        -- Generate BWA index
-        dir <- asks (fromJust . _atacseq_bwa_index)
-        _ <- liftIO $ bwaMkIndex genome dir
-        return ()
-
 atacDownloadData :: ATACSeqConfig config
                  => ATACSeqWithSomeFile
                  -> ReaderT config IO ATACSeqWithSomeFile
@@ -47,6 +36,23 @@ atacDownloadData dat = dat & replicates.traverse.files.traverse %%~
     (\fl -> do
         dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/Download"))
         liftIO $ downloadFiles dir fl )
+
+atacMkIndex :: ATACSeqConfig config
+            => [ATACSeqWithSomeFile]
+            -> ReaderT config IO [ATACSeqWithSomeFile]
+atacMkIndex [] = return []
+atacMkIndex input = do
+    _ <- getGenomeIndex 
+    let fq = filter (isFq . either id fst) $ concat $
+            input^..folded.replicates.folded.files
+    unless (null fq) $ do
+        genome <- getGenomeFasta
+        -- Generate BWA index
+        dir <- asks (fromJust . _atacseq_bwa_index)
+        liftIO (bwaMkIndex genome dir) >> return ()
+    return input
+  where
+    isFq x = getFileType x == Fastq
 
 atacGetFastq :: [ATACSeqWithSomeFile]
              -> [ ATACSeq S ( Either
@@ -97,12 +103,12 @@ atacFilterBamSort :: ATACSeqConfig config
         (Either (File '[CoordinateSorted] 'Bam) (File '[CoordinateSorted, PairedEnd] 'Bam)) )
 atacFilterBamSort input = do
     dir <- asks ((<> "/Bam") . _atacseq_output_dir) >>= getPath
-    tmpDir <- fromMaybe "./" <$> asks _atacseq_tmp_dir
+    tmp <- fromMaybe "./" <$> asks _atacseq_tmp_dir
     let output = printf "%s/%s_rep%d_filt.bam" dir (T.unpack $ input^.eid)
             (input^.replicates._1)
     input & replicates.traverse.files %%~ liftIO . either
-        (fmap Left . filterBamSort tmpDir output)
-        (fmap Right . filterBamSort tmpDir output)
+        (fmap Left . filterBamSort tmp output)
+        (fmap Right . filterBamSort tmp output)
 
 atacGetBed :: [ATACSeqWithSomeFile]
            -> [ATACSeq S (Either (File '[Gzip] 'Bed) (File '[PairedEnd, Gzip] 'Bed))]

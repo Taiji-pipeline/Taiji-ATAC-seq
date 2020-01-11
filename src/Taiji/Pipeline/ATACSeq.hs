@@ -22,33 +22,30 @@ import           Taiji.Utils.Plot
 
 builder :: Builder ()
 builder = do
+-------------------------------------------------------------------------------
+-- Reads mapping
+-------------------------------------------------------------------------------
     node "Read_Input" [| \_ -> do
         input <- asks _atacseq_input
         liftIO $ if ".tsv" == reverse (take 4 $ reverse input)
             then readATACSeqTSV input "ATAC-seq"
             else readATACSeq input "ATAC-seq"
-        |] $ doc .= "Read ATAC-seq data information from input file."
+        |] $ doc .= "Read input data information."
     nodePar "Download_Data" 'atacDownloadData $ doc .= "Download data."
+    node "Make_Index" 'atacMkIndex $ doc .= "Generate genome indices."
     uNode "Get_Fastq" 'atacGetFastq
-
-    path ["Read_Input", "Download_Data", "Get_Fastq"]
-
-    node "Make_Index" 'atacMkIndex $ doc .= "Generate the BWA index."
-    uNode "Align_Prep" 'fst
     nodePar "Align" 'atacAlign $ do
         nCore .= 4
         doc .= "Align reads using BWA: bwa mem -M -k 32."
+    path ["Read_Input", "Download_Data", "Make_Index", "Get_Fastq", "Align"]
 
-    ["Get_Fastq"] ~> "Make_Index"
-    ["Get_Fastq", "Make_Index"] ~> "Align_Prep"
-    ["Align_Prep"] ~> "Align"
-
+-------------------------------------------------------------------------------
+-- Bam filtering
+-------------------------------------------------------------------------------
     uNode "Get_Bam" [| \(x,y) -> atacGetBam x ++ y |]
-    ["Download_Data", "Align"] ~> "Get_Bam"
-
+    ["Make_Index", "Align"] ~> "Get_Bam"
     nodePar "Filter_Bam" 'atacFilterBamSort $ do
         doc .= "Remove low quality tags using: samtools -F 0x70c -q 30"
-
     nodePar "Remove_Duplicates" [| \input -> do
         dir <- asks _atacseq_output_dir >>= getPath . (<> asDir "/Bam")
         let output = printf "%s/%s_rep%d_filt_dedup.bam" dir (T.unpack $ input^.eid)
@@ -57,25 +54,22 @@ builder = do
             (fmap Left . removeDuplicates output)
             (fmap Right . removeDuplicates output)
         |] $ doc .= "Remove PCR duplicates."
-
     nodePar "Bam_To_Bed" 'atacBamToBed $ do
         doc .= "Convert Bam file to Bed file."
+    path ["Get_Bam", "Filter_Bam", "Remove_Duplicates", "Bam_To_Bed"]
 
-    node "Get_Bed" [| \(input1, input2) -> do
+-------------------------------------------------------------------------------
+-- Bed
+-------------------------------------------------------------------------------
+    uNode "Get_Bed" [| \(input1, input2) ->
         let f [x] = x
             f _   = error "Must contain exactly 1 file"
-            res = mapped.replicates.mapped.files %~ f $ mergeExp $
-                atacGetBed input1 ++
-                (input2 & mapped.replicates.mapped.files %~ Left)
-        unless (null res) $ getGenomeIndex >> return ()
-        return res
-        |] $ doc .= "Extract Bed files."
-    path ["Get_Bam", "Filter_Bam", "Remove_Duplicates", "Bam_To_Bed"]
-    ["Download_Data", "Bam_To_Bed"] ~> "Get_Bed"
-
+        in mapped.replicates.mapped.files %~ f $ mergeExp $ atacGetBed input1 ++
+            (input2 & mapped.replicates.mapped.files %~ Left)
+        |]
+    ["Make_Index", "Bam_To_Bed"] ~> "Get_Bed"
     nodePar "Merge_Bed" 'atacConcatBed $
         doc .= "Merge Bed files from different replicates"
-
     nodePar "Make_BigWig" [| \input -> do
         dir <- asks _atacseq_output_dir >>= getPath . (<> "/BigWig/")
         seqIndex <- getGenomeIndex
@@ -85,19 +79,21 @@ builder = do
             chrSize <- withGenome seqIndex $ return . getChrSizes
             bedToBigWig output chrSize $ input^.replicates._2.files
         |] $ doc .= "Generate Bigwig files."
-
     path ["Get_Bed", "Merge_Bed", "Make_BigWig"]
 
+-------------------------------------------------------------------------------
+-- Call peaks
+-------------------------------------------------------------------------------
     uNode "Call_Peak_Prep" [| \(beds, inputs) ->
         let ids = S.fromList $ map (^.eid) $ atacGetNarrowPeak inputs
         in filter (\x -> not $ S.member (x^.eid) ids) beds
         |]
-    ["Merge_Bed", "Download_Data"] ~> "Call_Peak_Prep"
+    ["Merge_Bed", "Make_Index"] ~> "Call_Peak_Prep"
     nodePar "Call_Peak" 'atacCallPeak $ doc .= "Call peaks using MACS2."
     path ["Call_Peak_Prep", "Call_Peak"]
 
     uNode "Get_Peak" [| \(input1, input2) -> atacGetNarrowPeak input1 ++ input2 |]
-    ["Download_Data", "Call_Peak"] ~> "Get_Peak"
+    ["Make_Index", "Call_Peak"] ~> "Get_Peak"
 
     node "Merge_Peaks" 'atacMergePeaks $ do
         doc .= "Merge peaks called from different samples together to form " <>
