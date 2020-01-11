@@ -54,13 +54,17 @@ builder = do
             (fmap Left . removeDuplicates output)
             (fmap Right . removeDuplicates output)
         |] $ doc .= "Remove PCR duplicates."
-    nodePar "Bam_To_Bed" 'atacBamToBed $ do
-        doc .= "Convert Bam file to Bed file."
-    path ["Get_Bam", "Filter_Bam", "Remove_Duplicates", "Bam_To_Bed"]
+    path ["Get_Bam", "Filter_Bam", "Remove_Duplicates"]
+
 
 -------------------------------------------------------------------------------
 -- Bed
 -------------------------------------------------------------------------------
+    uNode "Bam_To_Bed_Prep" [| \(input, x) -> atacGetFilteredBam input ++ x |]
+    ["Make_Index", "Remove_Duplicates"] ~> "Bam_To_Bed_Prep"
+    nodePar "Bam_To_Bed" 'atacBamToBed $ doc .= "Convert Bam file to Bed file."
+    path ["Bam_To_Bed_Prep", "Bam_To_Bed"]
+
     uNode "Get_Bed" [| \(input1, input2) ->
         let f [x] = x
             f _   = error "Must contain exactly 1 file"

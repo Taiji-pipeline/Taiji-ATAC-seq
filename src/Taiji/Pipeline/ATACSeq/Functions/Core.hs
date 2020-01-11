@@ -10,6 +10,7 @@ module Taiji.Pipeline.ATACSeq.Functions.Core
     , atacGetFastq
     , atacAlign
     , atacGetBam
+    , atacGetFilteredBam
     , atacFilterBamSort
     , atacGetBed
     , atacBamToBed
@@ -22,6 +23,7 @@ import           Data.Bifunctor                (bimap)
 import           Data.Coerce                   (coerce)
 import           Data.Either                   (lefts)
 import           Data.Singletons               (SingI)
+import           Data.Singletons.Prelude (Elem)
 import qualified Data.Text                     as T
 
 import           Taiji.Pipeline.ATACSeq.Types
@@ -92,10 +94,24 @@ atacGetBam :: [ATACSeqWithSomeFile]
 atacGetBam inputs = concatMap split $ concatMap split $
     inputs & mapped.replicates.mapped.files %~ f
   where
-    f fls = flip map (filter (\x -> getFileType x == Bam) $ lefts fls) $ \fl ->
+    f fls = flip map (filterData $ lefts fls) $ \fl ->
         if fl `hasTag` PairedEnd
             then Right $ fromSomeFile fl
             else Left $ fromSomeFile fl
+    filterData = filter $ \x -> getFileType x == Bam && not (x `hasTag` Filtered)
+
+atacGetFilteredBam :: Elem 'PairedEnd b ~ 'True
+                   => [ATACSeqWithSomeFile]
+                   -> [ ATACSeq S (
+                       Either (File a 'Bam) (File b 'Bam) )]
+atacGetFilteredBam inputs = concatMap split $ concatMap split $
+    inputs & mapped.replicates.mapped.files %~ f
+  where
+    f fls = flip map (filterData $ lefts fls) $ \fl ->
+        if fl `hasTag` PairedEnd
+            then Right $ fromSomeFile fl
+            else Left $ fromSomeFile fl
+    filterData = filter $ \x -> getFileType x == Bam && x `hasTag` Filtered
 
 atacFilterBamSort :: ATACSeqConfig config
     => ATACSeq S (Either (File '[] 'Bam) (File '[PairedEnd] 'Bam))
