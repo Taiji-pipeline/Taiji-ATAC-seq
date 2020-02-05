@@ -76,6 +76,9 @@ atacGetMotifSite window (tfbs, e) = do
         return $ location .~ output $ emptyFile
         )
   where
-    getSummit pk = let c = pk^.chromStart + fromJust (pk^.npPeak)
-                   in pk & chromStart .~ c - window
-                         & chromEnd .~ c + window
+    getSummit pk = pk & chromStart .~ center - window & chromEnd .~ center + window
+      where
+        center = case pk^.npPeak of
+            Nothing -> (pk^.chromStart + pk^.chromEnd) `div` 2
+            Just c -> pk^.chromStart + c
+
