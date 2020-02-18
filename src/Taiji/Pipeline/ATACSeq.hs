@@ -6,6 +6,7 @@ module Taiji.Pipeline.ATACSeq (builder) where
 
 import           Bio.Motif                              (readMEME)
 import           Bio.Data.Experiment.Parser
+import Bio.Data.Experiment.Types
 import           Bio.Pipeline.NGS.Utils
 import           Bio.Pipeline.Utils
 import Bio.Seq.IO (withGenome, getChrSizes)
@@ -27,9 +28,7 @@ builder = do
 -------------------------------------------------------------------------------
     node "Read_Input" [| \_ -> do
         input <- asks _atacseq_input
-        liftIO $ if ".tsv" == reverse (take 4 $ reverse input)
-            then readATACSeqTSV input "ATAC-seq"
-            else readATACSeq input "ATAC-seq"
+        liftIO $ mkInputReader input "ATAC-seq" ATACSeq
         |] $ doc .= "Read input data information."
     nodePar "Download_Data" 'atacDownloadData $ doc .= "Download data."
     node "Make_Index" 'atacMkIndex $ doc .= "Generate genome indices."
