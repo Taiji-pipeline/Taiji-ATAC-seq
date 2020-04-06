@@ -80,7 +80,7 @@ builder = do
                 (input^.replicates._1)
         liftIO $ do
             chrSize <- withGenome seqIndex $ return . getChrSizes
-            bedToBigWig output chrSize $ input^.replicates._2.files
+            bedToBigWig output chrSize [] $ input^.replicates._2.files
         |] $ doc .= "Generate Bigwig files."
     path ["Get_Bed", "Merge_Bed", "Make_BigWig"]
 
