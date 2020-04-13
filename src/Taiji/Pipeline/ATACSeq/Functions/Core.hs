@@ -160,7 +160,11 @@ atacCallPeak input = do
 
 -- | Fetch narrowpeaks in input data.
 atacGetNarrowPeak :: [ATACSeqWithSomeFile]
-                  -> [ATACSeq S (File '[] 'NarrowPeak)]
+                  -> [ATACSeq S (Either (File '[] 'NarrowPeak) (File '[Gzip] 'NarrowPeak))]
 atacGetNarrowPeak input = concatMap split $ concatMap split $
-    input & mapped.replicates.mapped.files %~ map fromSomeFile .
+    input & mapped.replicates.mapped.files %~ map f .
         filter (\x -> getFileType x == NarrowPeak) . lefts
+  where
+    f fl = if fl `hasTag` Gzip
+        then Right $ fromSomeFile fl
+        else Left $ fromSomeFile fl

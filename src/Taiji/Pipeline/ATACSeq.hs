@@ -95,7 +95,9 @@ builder = do
     nodePar "Call_Peak" 'atacCallPeak $ doc .= "Call peaks using MACS2."
     path ["Call_Peak_Prep", "Call_Peak"]
 
-    uNode "Get_Peak" [| \(input1, input2) -> atacGetNarrowPeak input1 ++ input2 |]
+    uNode "Get_Peak" [| \(input1, input2) ->
+        let input2' = input2 & mapped.replicates.mapped.files %~ Left
+        in atacGetNarrowPeak input1 ++ input2' |]
     ["Make_Index", "Call_Peak"] ~> "Get_Peak"
 
     node "Merge_Peaks" 'atacMergePeaks $ do
