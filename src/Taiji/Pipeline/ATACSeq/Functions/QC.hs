@@ -83,12 +83,10 @@ plotDupRate input =
         Nothing -> Nothing
         Just r ->  Just
             (T.pack $ printf "%s_rep%d" (T.unpack $ e^.eid) (e^.replicates._1), r)
-    getResult fl = case M.lookup "QC" (fl^.info) of
-        Nothing -> Nothing
-        Just txt -> let xs = T.lines txt
-                        dup = read $ T.unpack $ last $ T.words $ last xs
-                        total = read $ T.unpack $ (T.words $ head xs) !! 1
-                    in Just $ (100 * dup / total, total / 1000000)
+    getResult fl = do
+        total <- fmap (read . T.unpack) $ M.lookup "READ" $ fl^.info
+        dup <- fmap (read . T.unpack) $ M.lookup "DUPLICATE TOTAL" $ fl^.info
+        return (100 * dup / total, total / 1000000)
 
 peakSignal :: ATACSeqConfig config
            => ( ATACSeq S (Either (File '[Gzip] 'Bed) (File '[PairedEnd, Gzip] 'Bed))
