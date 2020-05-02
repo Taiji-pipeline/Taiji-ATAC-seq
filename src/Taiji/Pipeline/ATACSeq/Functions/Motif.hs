@@ -48,7 +48,8 @@ atacFindMotifSiteAll :: ATACSeqConfig config
                      -> (File '[] 'Bed, [Motif])
                      -> ReaderT config IO (File '[] 'Bed)
 atacFindMotifSiteAll p (openChromatin, motifs) = do
-    seqIndex <- getGenomeIndex 
+    seqIndex <- asks ( fromMaybe (error "Genome index file was not specified!") .
+        _atacseq_genome_index )
     dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/TFBS/"))
     liftIO $ withGenome seqIndex $ \g -> do
         output <- emptyTempFile dir "motif_sites_part.bed"

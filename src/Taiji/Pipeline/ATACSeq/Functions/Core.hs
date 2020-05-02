@@ -44,7 +44,7 @@ atacMkIndex :: ATACSeqConfig config
             -> ReaderT config IO [ATACSeqWithSomeFile]
 atacMkIndex [] = return []
 atacMkIndex input = do
-    _ <- getGenomeIndex 
+    mkGenomeIndex 
     let fq = filter (isFq . either id fst) $ concat $
             input^..folded.replicates.folded.files
     unless (null fq) $ do

@@ -75,7 +75,8 @@ builder = do
         doc .= "Merge Bed files from different replicates"
     nodePar "Make_BigWig" [| \input -> do
         dir <- asks _atacseq_output_dir >>= getPath . (<> "/BigWig/")
-        seqIndex <- getGenomeIndex
+        seqIndex <- asks ( fromMaybe (error "Genome index file was not specified!") .
+            _atacseq_genome_index )
         let output = printf "%s/%s_rep%d.bw" dir (T.unpack $ input^.eid)
                 (input^.replicates._1)
         liftIO $ do
@@ -145,10 +146,8 @@ builder = do
 
     node "Find_TFBS_Prep" [| \case
         Nothing -> return []
-        Just pk -> do
-            _ <- getGenomeIndex 
-            getMotif >>= liftIO . readMEME >>=
-                return . zip (repeat pk) . chunksOf 100
+        Just pk -> getMotif >>= liftIO . readMEME >>=
+            return . zip (repeat pk) . chunksOf 100
         |] $ return ()
     nodePar "Find_TFBS_Union" [| \x -> atacFindMotifSiteAll 5e-5 x |] $ do
         doc .= "Identify TF binding sites in open chromatin regions using " <>
