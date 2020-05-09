@@ -32,7 +32,7 @@ builder = do
         |] $ doc .= "Read input data information."
     nodePar "Download_Data" 'atacDownloadData $ doc .= "Download data."
     node "Make_Index" 'atacMkIndex $ doc .= "Generate genome indices."
-    uNode "Get_Fastq" 'atacGetFastq
+    uNode "Get_Fastq" [| return . atacGetFastq |]
     nodePar "Align" 'atacAlign $ do
         nCore .= 4
         doc .= "Align reads using BWA: bwa mem -M -k 32."
@@ -41,7 +41,7 @@ builder = do
 -------------------------------------------------------------------------------
 -- Bam filtering
 -------------------------------------------------------------------------------
-    uNode "Get_Bam" [| \(x,y) -> atacGetBam x ++ y |]
+    uNode "Get_Bam" [| \(x,y) -> return $ atacGetBam x ++ y |]
     ["Make_Index", "Align"] ~> "Get_Bam"
     nodePar "Filter_Bam" 'atacFilterBamSort $ do
         doc .= "Remove low quality tags using: samtools -F 0x70c -q 30"
@@ -59,7 +59,7 @@ builder = do
 -------------------------------------------------------------------------------
 -- Bed
 -------------------------------------------------------------------------------
-    uNode "Bam_To_Bed_Prep" [| \(input, x) -> atacGetFilteredBam input ++ x |]
+    uNode "Bam_To_Bed_Prep" [| \(input, x) -> return $ atacGetFilteredBam input ++ x |]
     ["Make_Index", "Remove_Duplicates"] ~> "Bam_To_Bed_Prep"
     nodePar "Bam_To_Bed" 'atacBamToBed $ doc .= "Convert Bam file to Bed file."
     path ["Bam_To_Bed_Prep", "Bam_To_Bed"]
@@ -67,7 +67,8 @@ builder = do
     uNode "Get_Bed" [| \(input1, input2) ->
         let f [x] = x
             f _   = error "Must contain exactly 1 file"
-        in mapped.replicates.mapped.files %~ f $ mergeExp $ atacGetBed input1 ++
+        in return $ mapped.replicates.mapped.files %~ f $
+            mergeExp $ atacGetBed input1 ++
             (input2 & mapped.replicates.mapped.files %~ Left)
         |]
     ["Make_Index", "Bam_To_Bed"] ~> "Get_Bed"
@@ -90,7 +91,7 @@ builder = do
 -------------------------------------------------------------------------------
     uNode "Call_Peak_Prep" [| \(beds, inputs) ->
         let ids = S.fromList $ map (^.eid) $ atacGetNarrowPeak inputs
-        in filter (\x -> not $ S.member (x^.eid) ids) beds
+        in return $ filter (\x -> not $ S.member (x^.eid) ids) beds
         |]
     ["Merge_Bed", "Make_Index"] ~> "Call_Peak_Prep"
     nodePar "Call_Peak" 'atacCallPeak $ doc .= "Call peaks using MACS2."
@@ -98,7 +99,7 @@ builder = do
 
     uNode "Get_Peak" [| \(input1, input2) ->
         let input2' = input2 & mapped.replicates.mapped.files %~ Left
-        in atacGetNarrowPeak input1 ++ input2' |]
+        in return $ atacGetNarrowPeak input1 ++ input2' |]
     ["Make_Index", "Call_Peak"] ~> "Get_Peak"
 
     node "Merge_Peaks" 'atacMergePeaks $ do
@@ -121,12 +122,12 @@ builder = do
     nodePar "Fragment_Size_Distr" [| liftIO . fragDistr |] $ return ()
     path ["Remove_Duplicates", "Fragment_Size_Distr"]
 
-    uNode "Compute_TE_Prep" [| concatMap split |]
+    uNode "Compute_TE_Prep" [| return . concatMap split |]
     nodePar "Compute_TE" 'computeTE $ doc .= "Compute TSS enrichment."
     path ["Get_Bed", "Compute_TE_Prep", "Compute_TE"]
 
     uNode "Compute_Peak_Signal_Prep" [| \(xs, y) -> 
-        zip (concatMap split xs) $ repeat $ fromJust y|]
+        return $ zip (concatMap split xs) $ repeat $ fromJust y|]
     nodePar "Compute_Peak_Signal" 'peakSignal $ return ()
     ["Get_Bed", "Merge_Peaks"] ~> "Compute_Peak_Signal_Prep"
     path ["Compute_Peak_Signal_Prep", "Compute_Peak_Signal"]
@@ -154,7 +155,7 @@ builder = do
             "the FIMO's motif scanning algorithm. " <>
             "Use 5e-5 as the default p-value cutoff."
 
-    uNode "Get_TFBS_Prep" [| \(x,y) -> zip (repeat x) y|]
+    uNode "Get_TFBS_Prep" [| \(x,y) -> return $ zip (repeat x) y|]
 
     nodePar "Get_TFBS" [| atacGetMotifSite 50 |] $ do
         doc .= "Retrieve motif binding sites for each sample."

@@ -34,10 +34,11 @@ type ATACSeqWithSomeFile = ATACSeq N [Either SomeFile (SomeFile, SomeFile)]
 atacDownloadData :: ATACSeqConfig config
                  => ATACSeqWithSomeFile
                  -> ReaderT config IO ATACSeqWithSomeFile
-atacDownloadData dat = dat & replicates.traverse.files.traverse %%~
-    (\fl -> do
+atacDownloadData dat = do
+    tmp <- fromMaybe "./" <$> asks _atacseq_tmp_dir
+    dat & replicates.traverse.files.traverse %%~ (\fl -> do
         dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/Download"))
-        liftIO $ downloadFiles dir fl )
+        liftIO $ downloadFiles dir tmp fl )
 
 atacMkIndex :: ATACSeqConfig config
             => [ATACSeqWithSomeFile]
