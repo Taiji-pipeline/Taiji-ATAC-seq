@@ -17,6 +17,7 @@ class ATACSeqConfig config where
     _atacseq_input :: config -> FilePath
     _atacseq_assembly :: config -> Maybe String
     _atacseq_bwa_index :: config -> Maybe FilePath
+    _atacseq_bwa_seed_length :: config -> Int
     _atacseq_genome_fasta :: config -> Maybe FilePath
     _atacseq_genome_index :: config -> Maybe FilePath
     _atacseq_motif_file :: config -> Maybe FilePath

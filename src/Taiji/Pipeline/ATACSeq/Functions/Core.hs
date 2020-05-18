@@ -76,16 +76,18 @@ atacAlign :: ATACSeqConfig config
 atacAlign input = do
     dir <- asks ((<> "/Bam") . _atacseq_output_dir) >>= getPath
     idx <- asks (fromJust . _atacseq_bwa_index)
+    seedLen <- asks _atacseq_bwa_seed_length
     let output = printf "%s/%s_rep%d.bam" dir (T.unpack $ input^.eid)
             (input^.replicates._1)
+        opt = defaultBWAOpts & bwaCores .~ 4 & bwaSeedLen .~ seedLen
     input & replicates.traverse.files %%~ liftIO . ( \fl -> case fl of
         Left f ->
             let f' = fromSomeTags f :: File '[] 'Fastq
-            in bwaAlign output idx (Left f') $ defaultBWAOpts & bwaCores .~ 4
+            in bwaAlign output idx (Left f') opt
         Right (f1,f2) ->
             let f1' = fromSomeTags f1 :: File '[] 'Fastq
                 f2' = fromSomeTags f2 :: File '[] 'Fastq
-            in bwaAlign output idx (Right (f1', f2')) $ defaultBWAOpts & bwaCores .~ 4
+            in bwaAlign output idx (Right (f1', f2')) opt
         )
 
 -- | Grab bam files

@@ -112,15 +112,16 @@ peakSignal (atac, peakFl) = do
 
 -- | Compute correlation between experiments.
 plotPeakCor :: [ATACSeq S (File '[] 'Other)] -> IO (Maybe EChart)
-plotPeakCor [] = return Nothing
-plotPeakCor inputs = do
-    let names = flip map inputs $ \x ->
-            (x^.eid) <> "_rep" <> T.pack (show $ x^.replicates._1)
-    cor <- fmap (pearsonMatByRow . fromRows) $ forM inputs $ \input ->
-        decodeFile $ input^.replicates._2.files.location
-    let plt = heatmap $ DF.orderDataFrame id $
-            DF.mkDataFrame names names $ toRowLists cor
-    return $ Just $ addAttr (title "Pearson correlation") $ addAttr toolbox plt
+plotPeakCor inputs
+    | length inputs == 0 || length inputs > 100 = return Nothing
+    | otherwise = do
+        let names = flip map inputs $ \x ->
+                (x^.eid) <> "_rep" <> T.pack (show $ x^.replicates._1)
+        cor <- fmap (pearsonMatByRow . fromRows) $ forM inputs $ \input ->
+            decodeFile $ input^.replicates._2.files.location
+        let plt = heatmap $ DF.orderDataFrame id $
+                DF.mkDataFrame names names $ toRowLists cor
+        return $ Just $ addAttr (title "Pearson correlation") $ addAttr toolbox plt
 
 plotTE :: [(T.Text, U.Vector Double)] -> [EChart]
 plotTE [] = []

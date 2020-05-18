@@ -14,7 +14,9 @@ import           Data.List.Split                        (chunksOf)
 import qualified Data.HashSet as S
 import           Control.Workflow
 import           Data.Either                           (either)
+import qualified Data.Vector.Unboxed as U
 import qualified Data.Text                             as T
+import qualified Data.Text.IO                             as T
 
 import           Taiji.Pipeline.ATACSeq.Types
 import           Taiji.Pipeline.ATACSeq.Functions
@@ -140,6 +142,9 @@ builder = do
             then return ()
             else do
                 dir <- qcDir
+                let output = dir <> "/TSSe.tsv"
+                liftIO $ T.writeFile output $ T.unlines $
+                    map (\(a,b) -> a <> "\t" <> T.pack (show $ U.maximum b)) te
                 liftIO $ savePlots (dir <> "/qc.html") [] plts
         |] $ doc .= "Generating QC plots."
     [ "Align_Stat", "Remove_Duplicates", "Fragment_Size_Distr"
