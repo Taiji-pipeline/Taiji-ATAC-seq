@@ -35,6 +35,7 @@ import Statistics.Matrix (fromRows, toRowLists)
 
 import           Taiji.Pipeline.ATACSeq.Types
 import Taiji.Utils.Plot.ECharts
+import Taiji.Utils (readGenesValidated)
 import           Taiji.Prelude
 import qualified Taiji.Utils.DataFrame as DF
 
@@ -139,7 +140,7 @@ computeTE :: ATACSeqConfig config
           => ATACSeq S (Either (File '[Gzip] 'Bed) (File '[PairedEnd, Gzip] 'Bed))
           -> ReaderT config IO (T.Text, U.Vector Double)
 computeTE input = do
-    genes <- getAnnotation >>= liftIO . readGenes
+    genes <- getAnnotation >>= liftIO . readGenesValidated
     let tss = flip map genes $ \g -> 
             let chr = geneChrom g
                 str = geneStrand g

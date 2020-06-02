@@ -10,7 +10,7 @@ module Taiji.Pipeline.ATACSeq.Functions.GeneQuant
 import qualified Data.ByteString.Char8 as B
 import Bio.Data.Bed.Types
 import Bio.Data.Bed
-import Bio.RealWorld.GENCODE (readGenes, Gene(..))
+import Bio.RealWorld.GENCODE (Gene(..))
 import Data.Double.Conversion.ByteString (toShortest)
 import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet as S
@@ -22,6 +22,7 @@ import qualified Data.Text as T
 import Bio.Data.Bed.Utils
 
 import Taiji.Prelude
+import Taiji.Utils (readGenesValidated)
 import           Taiji.Pipeline.ATACSeq.Types
 import qualified Taiji.Utils.DataFrame as DF
 
@@ -30,7 +31,7 @@ estimateExpr :: ATACSeqConfig config
              => ATACSeq S (File '[Gzip] 'Bed)
              -> ReaderT config IO (ATACSeq S (File '[GeneQuant] 'Tsv))
 estimateExpr input = do
-    genes <- getAnnotation >>= liftIO . readGenes
+    genes <- getAnnotation >>= liftIO . readGenesValidated
     dir <- asks ((<> "/GeneQuant") . _atacseq_output_dir) >>= getPath
     let output = printf "%s/%s_rep%d_gene_quant.tsv" dir (T.unpack $ input^.eid)
             (input^.replicates._1)
@@ -82,7 +83,7 @@ readExpr :: ATACSeq S (File '[GeneQuant] 'Tsv)
 readExpr input = do
     c <- B.readFile $ input^.replicates._2.files.location
     return ( fromJust $ input^.groupName
-           , M.fromListWith max $ map f $ tail $ B.lines c )
+           , M.fromListWith max $ map f $ B.lines c )
   where
     f xs = let fs = B.split '\t' xs in (mk $ head fs, readDouble $ fs!!1)
 {-# INLINE readExpr #-}
