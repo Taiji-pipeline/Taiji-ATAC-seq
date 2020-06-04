@@ -150,16 +150,15 @@ atacBamToBed input = do
         let fl' = either coerce coerce fl :: File '[] 'Bam
         bam2Bed output (\x -> not $ (x^.chrom) `elem` ["chrM", "M"]) fl' )
 
-atacCallPeak :: (ATACSeqConfig config, SingI tags)
-             => ATACSeq S (File tags 'Bed)
-             -> ReaderT config IO (ATACSeq S (File '[] 'NarrowPeak))
+atacCallPeak :: ATACSeqConfig config
+             => ATACSeq S (File '[Gzip] 'Bed)
+             -> ReaderT config IO (ATACSeq S (File '[Gzip] 'NarrowPeak))
 atacCallPeak input = do
     dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/Peaks"))
     opts <- getCallPeakOpt
-    let output = printf "%s/%s_rep%d.narrowPeak" dir (T.unpack $ input^.eid)
+    let output = printf "%s/%s_rep%d.narrowPeak.gz" dir (T.unpack $ input^.eid)
             (input^.replicates._1)
-    input & replicates.traverse.files %%~ liftIO .
-        (\fl -> callPeaks output fl Nothing opts)
+    input & replicates.traverse.files %%~ liftIO . (\fl -> callPeaks output fl Nothing opts)
 
 -- | Fetch narrowpeaks in input data.
 atacGetNarrowPeak :: [ATACSeqWithSomeFile]

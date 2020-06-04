@@ -100,7 +100,7 @@ builder = do
     path ["Call_Peak_Prep", "Call_Peak"]
 
     uNode "Get_Peak" [| \(input1, input2) ->
-        let input2' = input2 & mapped.replicates.mapped.files %~ Left
+        let input2' = input2 & mapped.replicates.mapped.files %~ Right
         in return $ atacGetNarrowPeak input1 ++ input2' |]
     ["Make_Index", "Call_Peak"] ~> "Get_Peak"
 

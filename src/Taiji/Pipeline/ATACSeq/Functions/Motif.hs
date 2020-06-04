@@ -25,15 +25,15 @@ import           Taiji.Prelude
 -- | Merge overlapping peaks.
 atacMergePeaks :: ATACSeqConfig config
                => [ATACSeq S (Either (File '[] 'NarrowPeak) (File '[Gzip] 'NarrowPeak))]
-               -> ReaderT config IO (Maybe (File '[] 'Bed))
+               -> ReaderT config IO (Maybe (File '[Gzip] 'Bed))
 atacMergePeaks [] = return Nothing
 atacMergePeaks input = do
     dir <- asks _atacseq_output_dir >>= getPath
-    let output = dir ++ "/openChromatin.bed"
+    let output = dir ++ "/openChromatin.bed.gz"
     liftIO $ do
         openChromatin <- foldM f [] $
             input^..folded.replicates.folded.files
-        writeBed output openChromatin
+        runResourceT $ runConduit $ yieldMany openChromatin .| sinkFileBedGzip output
         return $ Just $ location .~ output $ emptyFile
   where
     f acc (Left fl) = do
@@ -45,35 +45,35 @@ atacMergePeaks input = do
 
 atacFindMotifSiteAll :: ATACSeqConfig config
                      => Double     -- ^ p value
-                     -> (File '[] 'Bed, [Motif])
-                     -> ReaderT config IO (File '[] 'Bed)
+                     -> (File '[Gzip] 'Bed, [Motif])
+                     -> ReaderT config IO (File '[Gzip] 'Bed)
 atacFindMotifSiteAll p (openChromatin, motifs) = do
     seqIndex <- asks ( fromMaybe (error "Genome index file was not specified!") .
         _atacseq_genome_index )
     dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/TFBS/"))
     liftIO $ withGenome seqIndex $ \g -> do
-        output <- emptyTempFile dir "motif_sites_part.bed"
+        output <- emptyTempFile dir "motif_sites_part.bed.gz"
         let motifs' = map (mkCutoffMotif def p) motifs
         runResourceT $ runConduit $
-            (streamBed (openChromatin^.location) :: _ _ BED3 _ _) .|
-            scanMotif g motifs' .| sinkFileBed output
+            (streamBedGzip (openChromatin^.location) :: _ _ BED3 _ _) .|
+            scanMotif g motifs' .| sinkFileBedGzip output
         return $ location .~ output $ emptyFile
 
 -- | Retrieve TFBS for each experiment
 atacGetMotifSite :: ATACSeqConfig config
                  => Int -- ^ region around summit
-                 -> ( [File '[] 'Bed]
+                 -> ( [File '[Gzip] 'Bed]
                     , ATACSeq S (Either (File '[] 'NarrowPeak) (File '[Gzip] 'NarrowPeak)) )
-                 -> ReaderT config IO (ATACSeq S (File '[] 'Bed))
+                 -> ReaderT config IO (ATACSeq S (File '[Gzip] 'Bed))
 atacGetMotifSite window (tfbs, e) = do
     dir <- asks ((<> "/TFBS") . _atacseq_output_dir) >>= getPath
     e & replicates.traversed.files %%~ ( \fl -> liftIO $ do
-        let output = printf "%s/%s_rep%d.bed" dir (T.unpack $ e^.eid)
+        let output = printf "%s/%s_rep%d.bed.gz" dir (T.unpack $ e^.eid)
                 (e^.replicates._1)
         peaks <- runResourceT $ runConduit $ getBed fl .| mapC getSummit .| sinkList
         runResourceT $ runConduit $
-            (mapM_ (streamBed . (^.location)) tfbs :: _ _ BED _ _) .|
-            intersectBed peaks .| sinkFileBed output
+            (mapM_ (streamBedGzip . (^.location)) tfbs :: _ _ BED _ _) .|
+            intersectBed peaks .| sinkFileBedGzip output
         return $ location .~ output $ emptyFile
         )
   where

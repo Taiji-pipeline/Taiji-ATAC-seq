@@ -91,14 +91,14 @@ plotDupRate input =
 
 peakSignal :: ATACSeqConfig config
            => ( ATACSeq S (Either (File '[Gzip] 'Bed) (File '[PairedEnd, Gzip] 'Bed))
-              , File '[] 'Bed )   -- ^ Reference peak list
+              , File '[Gzip] 'Bed )   -- ^ Reference peak list
            -> ReaderT config IO (ATACSeq S (File '[] 'Other))
 peakSignal (atac, peakFl) = do 
     dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/Peaks"))
     let output = printf "%s/%s_rep%d.signal.bin" dir (T.unpack $ atac^.eid)
             (atac^.replicates._1)
     atac & replicates.traverse.files %%~ liftIO . ( \fl -> do
-        regions <- runResourceT $ runConduit $ streamBed (peakFl^.location) .|
+        regions <- runResourceT $ runConduit $ streamBedGzip (peakFl^.location) .|
             concatMapC (splitBedBySizeLeft 500) .| sinkList :: IO [BED3]
         let readInput = either (streamBedGzip . (^.location))
                 (\x -> streamBedGzip (x^.location) .| concatMapC f) 
