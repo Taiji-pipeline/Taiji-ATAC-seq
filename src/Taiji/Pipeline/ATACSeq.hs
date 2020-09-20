@@ -78,13 +78,14 @@ builder = do
         doc .= "Merge Bed files from different replicates"
     nodePar "Make_BigWig" [| \input -> do
         dir <- asks _atacseq_output_dir >>= getPath . (<> "/BigWig/")
+        tmpdir <- fromMaybe "./" <$> asks _atacseq_tmp_dir
         seqIndex <- asks ( fromMaybe (error "Genome index file was not specified!") .
             _atacseq_genome_index )
         let output = printf "%s/%s_rep%d.bw" dir (T.unpack $ input^.eid)
                 (input^.replicates._1)
         liftIO $ do
             chrSize <- withGenome seqIndex $ return . getChrSizes
-            bedToBigWig output chrSize [] $ input^.replicates._2.files
+            bedToBigWig output chrSize [] tmpdir $ input^.replicates._2.files
         |] $ doc .= "Generate Bigwig files."
     path ["Get_Bed", "Merge_Bed", "Make_BigWig"]
 

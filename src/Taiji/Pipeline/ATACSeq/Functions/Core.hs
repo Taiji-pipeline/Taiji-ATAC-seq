@@ -18,13 +18,15 @@ module Taiji.Pipeline.ATACSeq.Functions.Core
     , atacGetNarrowPeak
     ) where
 
-import           Bio.Data.Bed
+import           Bio.Data.Bed hiding (NarrowPeak)
 import           Data.Bifunctor                (bimap)
 import           Data.Coerce                   (coerce)
 import           Data.Either                   (lefts)
+import Bio.Seq.IO (withGenome, getChrSizes)
 import           Data.Singletons               (SingI)
 import           Data.Singletons.Prelude (Elem)
 import qualified Data.Text                     as T
+import Shelly hiding (FilePath)
 
 import           Taiji.Pipeline.ATACSeq.Types
 import           Taiji.Prelude
@@ -155,10 +157,21 @@ atacCallPeak :: ATACSeqConfig config
              -> ReaderT config IO (ATACSeq S (File '[Gzip] 'NarrowPeak))
 atacCallPeak input = do
     dir <- asks _atacseq_output_dir >>= getPath . (<> (asDir "/Peaks"))
+    tmpdir <- fromMaybe "./" <$> asks _atacseq_tmp_dir
     opts <- getCallPeakOpt
+    seqIndex <- asks ( fromMaybe (error "Genome index file was not specified!") .
+        _atacseq_genome_index )
     let output = printf "%s/%s_rep%d.narrowPeak.gz" dir (T.unpack $ input^.eid)
             (input^.replicates._1)
-    input & replicates.traverse.files %%~ liftIO . (\fl -> callPeaks output fl Nothing opts)
+        outputBW = printf "%s/%s_rep%d_signal.bw" dir (T.unpack $ input^.eid)
+            (input^.replicates._1)
+    input & replicates.traverse.files %%~ liftIO . (\fl -> do
+        peak <- callPeaks output fl Nothing $ genSignal.~ True $ opts
+        chrSize <- withGenome seqIndex $ return . getChrSizes
+        bedGraphToBigWig outputBW chrSize [] tmpdir $ output <> ".bdg"
+        shelly $ rm_f $ fromText $ T.pack $ output <> ".bdg"
+        return peak
+        )
 
 -- | Fetch narrowpeaks in input data.
 atacGetNarrowPeak :: [ATACSeqWithSomeFile]

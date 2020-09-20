@@ -8,7 +8,7 @@ module Taiji.Pipeline.ATACSeq.Functions.Motif
     , atacGetMotifSite
     ) where
 
-import           Bio.Data.Bed
+import           Bio.Data.Bed hiding (NarrowPeak)
 import           Bio.Data.Bed.Utils  (scanMotif, mkCutoffMotif)
 import           Bio.Data.Experiment
 import           Bio.Motif                     hiding (score)
