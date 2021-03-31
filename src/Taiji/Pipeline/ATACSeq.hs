@@ -13,7 +13,6 @@ import Bio.Seq.IO (withGenome, getChrSizes)
 import           Data.List.Split                        (chunksOf)
 import qualified Data.HashSet as S
 import           Control.Workflow
-import           Data.Either                           (either)
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Text                             as T
 import qualified Data.Text.IO                             as T

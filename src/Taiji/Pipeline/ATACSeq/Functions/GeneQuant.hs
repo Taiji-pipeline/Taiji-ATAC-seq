@@ -11,10 +11,8 @@ import qualified Data.ByteString.Char8 as B
 import Bio.Data.Bed.Types
 import Bio.Data.Bed
 import Bio.RealWorld.GENCODE (Gene(..))
-import Data.Double.Conversion.ByteString (toShortest)
 import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet as S
-import Bio.Utils.Misc (readDouble)
 import           Data.CaseInsensitive  (mk, original, CI)
 import qualified Data.Vector.Unboxed as U
 import           Bio.Pipeline.Utils

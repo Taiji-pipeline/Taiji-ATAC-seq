@@ -9,7 +9,6 @@ module Taiji.Pipeline.ATACSeq.Functions.Core.Extra
     ) where
 
 import           Bio.Data.Bed
-import           Bio.Data.Bed.Types (BED(..))
 import           Bio.Pipeline
 import           Data.Either                   (lefts, rights)
 import qualified Data.Map.Strict               as M
