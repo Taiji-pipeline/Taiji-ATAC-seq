@@ -46,6 +46,7 @@ builder = do
     ["Make_Index", "Align"] ~> "Get_Bam"
     nodePar "Filter_Bam" 'atacFilterBamSort $ do
         doc .= "Remove low quality tags using: samtools -F 0x70c -q 30"
+        nCore .= 2
     nodePar "Remove_Duplicates" [| \input -> do
         dir <- asks _atacseq_output_dir >>= getPath . (<> asDir "/Bam")
         let output = printf "%s/%s_rep%d_filt_dedup.bam" dir (T.unpack $ input^.eid)

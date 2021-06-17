@@ -162,13 +162,15 @@ atacCallPeak input = do
         _atacseq_genome_index )
     let output = printf "%s/%s_rep%d.narrowPeak.gz" dir (T.unpack $ input^.eid)
             (input^.replicates._1)
-        outputBW = printf "%s/%s_rep%d_signal.bw" dir (T.unpack $ input^.eid)
-            (input^.replicates._1)
+        --outputBW = printf "%s/%s_rep%d_signal.bw" dir (T.unpack $ input^.eid)
+        --    (input^.replicates._1)
     input & replicates.traverse.files %%~ liftIO . (\fl -> do
         peak <- callPeaks output fl Nothing $ genSignal.~ True $ opts
+        {-
         chrSize <- withGenome seqIndex $ return . getChrSizes
         bedGraphToBigWig outputBW chrSize [] tmpdir $ output <> ".bdg"
         shelly $ rm_f $ fromText $ T.pack $ output <> ".bdg"
+        -}
         return peak
         )
 
