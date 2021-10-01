@@ -29,7 +29,7 @@ builder = do
 -------------------------------------------------------------------------------
     node "Read_Input" [| \_ -> do
         input <- asks _atacseq_input
-        liftIO $ mkInputReader input "ATAC-seq" ATACSeq
+        liftIO $ mkInputReader input "ATAC-seq" (\_ x -> ATACSeq x)
         |] $ doc .= "Read input data information."
     nodePar "Download_Data" 'atacDownloadData $ doc .= "Download data."
     node "Make_Index" 'atacMkIndex $ doc .= "Generate genome indices."
