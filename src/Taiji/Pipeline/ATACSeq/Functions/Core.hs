@@ -23,7 +23,7 @@ import           Data.Bifunctor                (bimap)
 import           Data.Coerce                   (coerce)
 import           Data.Either                   (lefts)
 import Bio.Seq.IO (withGenome, getChrSizes)
-import           Data.Singletons.Prelude (Elem)
+import           Data.List.Singletons (Elem)
 import qualified Data.Text                     as T
 import Shelly hiding (FilePath)
 

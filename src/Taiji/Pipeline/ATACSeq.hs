@@ -31,10 +31,10 @@ builder = do
         input <- asks _atacseq_input
         liftIO $ mkInputReader input "ATAC-seq" (\_ x -> ATACSeq x)
         |] $ doc .= "Read input data information."
-    nodePar "Download_Data" 'atacDownloadData $ doc .= "Download data."
-    node "Make_Index" 'atacMkIndex $ doc .= "Generate genome indices."
+    nodePar "Download_Data" [| atacDownloadData |] $ doc .= "Download data."
+    node "Make_Index" [| atacMkIndex |] $ doc .= "Generate genome indices."
     uNode "Get_Fastq" [| return . atacGetFastq |]
-    nodePar "Align" 'atacAlign $ do
+    nodePar "Align" [| atacAlign |] $ do
         nCore .= 4
         doc .= "Align reads using BWA: bwa mem -M -k 32."
     path ["Read_Input", "Download_Data", "Make_Index", "Get_Fastq", "Align"]
@@ -44,7 +44,7 @@ builder = do
 -------------------------------------------------------------------------------
     uNode "Get_Bam" [| \(x,y) -> return $ atacGetBam x ++ y |]
     ["Make_Index", "Align"] ~> "Get_Bam"
-    nodePar "Filter_Bam" 'atacFilterBamSort $ do
+    nodePar "Filter_Bam" [| atacFilterBamSort |] $ do
         doc .= "Remove low quality tags using: samtools -F 0x70c -q 30"
         nCore .= 2
     nodePar "Remove_Duplicates" [| \input -> do
@@ -63,7 +63,7 @@ builder = do
 -------------------------------------------------------------------------------
     uNode "Bam_To_Bed_Prep" [| \(input, x) -> return $ atacGetFilteredBam input ++ x |]
     ["Make_Index", "Remove_Duplicates"] ~> "Bam_To_Bed_Prep"
-    nodePar "Bam_To_Bed" 'atacBamToBed $ doc .= "Convert Bam file to Bed file."
+    nodePar "Bam_To_Bed" [| atacBamToBed |] $ doc .= "Convert Bam file to Bed file."
     path ["Bam_To_Bed_Prep", "Bam_To_Bed"]
 
     uNode "Get_Bed" [| \(input1, input2) ->
@@ -74,7 +74,7 @@ builder = do
             (input2 & mapped.replicates.mapped.files %~ Left)
         |]
     ["Make_Index", "Bam_To_Bed"] ~> "Get_Bed"
-    nodePar "Merge_Bed" 'atacConcatBed $
+    nodePar "Merge_Bed" [| atacConcatBed |] $
         doc .= "Merge Bed files from different replicates"
     nodePar "Make_BigWig" [| \input -> do
         dir <- asks _atacseq_output_dir >>= getPath . (<> "/BigWig/")
@@ -97,7 +97,7 @@ builder = do
         in return $ filter (\x -> not $ S.member (x^.eid) ids) beds
         |]
     ["Merge_Bed", "Make_Index"] ~> "Call_Peak_Prep"
-    nodePar "Call_Peak" 'atacCallPeak $ doc .= "Call peaks using MACS2."
+    nodePar "Call_Peak" [| atacCallPeak |] $ doc .= "Call peaks using MACS2."
     path ["Call_Peak_Prep", "Call_Peak"]
 
     uNode "Get_Peak" [| \(input1, input2) ->
@@ -105,14 +105,14 @@ builder = do
         in return $ atacGetNarrowPeak input1 ++ input2' |]
     ["Make_Index", "Call_Peak"] ~> "Get_Peak"
 
-    node "Merge_Peaks" 'atacMergePeaks $ do
+    node "Merge_Peaks" [| atacMergePeaks |] $ do
         doc .= "Merge peaks called from different samples together to form " <>
             "a non-overlapping set of open chromatin regions."
     path ["Get_Peak", "Merge_Peaks"]
 
-    nodePar "Gene_Count" 'estimateExpr $
+    nodePar "Gene_Count" [| estimateExpr |] $
         doc .= "Estimate gene expression using promoter accessibility."
-    node "Make_Expr_Table" 'mkTable $ return ()
+    node "Make_Expr_Table" [| mkTable |] $ return ()
     path ["Merge_Bed", "Gene_Count", "Make_Expr_Table"]
 
 
@@ -126,12 +126,12 @@ builder = do
     path ["Remove_Duplicates", "Fragment_Size_Distr"]
 
     uNode "Compute_TE_Prep" [| return . concatMap split |]
-    nodePar "Compute_TE" 'computeTE $ doc .= "Compute TSS enrichment."
+    nodePar "Compute_TE" [| computeTE |] $ doc .= "Compute TSS enrichment."
     path ["Get_Bed", "Compute_TE_Prep", "Compute_TE"]
 
     uNode "Compute_Peak_Signal_Prep" [| \(xs, y) -> 
         return $ zip (concatMap split xs) $ repeat $ fromJust y|]
-    nodePar "Compute_Peak_Signal" 'peakSignal $ return ()
+    nodePar "Compute_Peak_Signal" [| peakSignal |] $ return ()
     ["Get_Bed", "Merge_Peaks"] ~> "Compute_Peak_Signal_Prep"
     path ["Compute_Peak_Signal_Prep", "Compute_Peak_Signal"]
 

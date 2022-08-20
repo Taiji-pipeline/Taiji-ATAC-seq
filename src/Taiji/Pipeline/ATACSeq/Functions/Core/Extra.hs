@@ -12,7 +12,7 @@ import           Bio.Data.Bed
 import           Bio.Pipeline
 import           Data.Either                   (lefts, rights)
 import qualified Data.Map.Strict               as M
-import           Data.Singletons.Prelude.List   (Elem)
+import           Data.List.Singletons (Elem)
 import qualified Data.Text                     as T
 
 import           Taiji.Pipeline.ATACSeq.Types

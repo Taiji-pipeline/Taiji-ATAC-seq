@@ -51,7 +51,8 @@ library
                      , text
                      , temporary
                      , transformers-base
-                     , singletons >= 2.5
+                     , singletons >= 3.0
+                     , singletons-base
                      , jmacro
                      , split
                      , shelly
